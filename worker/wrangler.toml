@@ -1,0 +1,26 @@
+name = "exam-sync"
+main = "exam-sync-worker.js"
+compatibility_date = "2024-01-01"
+
+# 环境变量在 Cloudflare Dashboard 中设置（不要写在这里）
+# [vars]
+# GITHUB_TOKEN = ""
+# GITHUB_OWNER = ""
+# GITHUB_REPO = ""
+# ADMIN_SECRET = ""
+# ALLOWED_ORIGINS = ""
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

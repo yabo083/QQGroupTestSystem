@@ -5,8 +5,8 @@
 # 初始明文题库（仅本地导入用，不上传）
 data/questions-initial.json
 
-# 管理员加密题库（含明文答案，仅管理员本地保留）
-data/bank.enc
+# 管理员加密题库（AES-256 加密，可安全上传；Worker 需要读写此文件）
+# data/bank.enc
 
 # 系统文件
 .DS_Store

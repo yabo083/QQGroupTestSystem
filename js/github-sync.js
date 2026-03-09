@@ -1,0 +1,95 @@
+/**
+ * GitHub 同步模块 — 通过 Cloudflare Worker 代理读写仓库文件
+ * Worker 持有 GitHub PAT，浏览器只需知道 Worker URL 和管理员通信密钥
+ */
+const GitHubSync = (() => {
+    const STORAGE_KEY = 'exam_sync_config';
+
+    /** 获取已保存的同步配置 */
+    function getConfig() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch { return null; }
+    }
+
+    /** 保存同步配置 */
+    function saveConfig(workerUrl, adminSecret) {
+        // 标准化 URL，去尾斜杠
+        workerUrl = workerUrl.replace(/\/+$/, '');
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ workerUrl, adminSecret }));
+    }
+
+    /** 清除同步配置 */
+    function clearConfig() {
+        localStorage.removeItem(STORAGE_KEY);
+    }
+
+    /** 是否已配置同步 */
+    function isConfigured() {
+        return getConfig() !== null;
+    }
+
+    /** 从仓库读取文件 */
+    async function readFile(filePath) {
+        const config = getConfig();
+        if (!config) throw new Error('未配置同步');
+
+        const url = config.workerUrl + '/api/read?file=' + encodeURIComponent(filePath);
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: { 'X-Admin-Secret': config.adminSecret }
+        });
+
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.error || 'Worker 请求失败 (' + resp.status + ')');
+        }
+
+        return resp.json();
+    }
+
+    /** 写入文件到仓库（支持多文件） */
+    async function writeFiles(files, message) {
+        const config = getConfig();
+        if (!config) throw new Error('未配置同步');
+
+        const url = config.workerUrl + '/api/write';
+        const resp = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Secret': config.adminSecret
+            },
+            body: JSON.stringify({ files, message })
+        });
+
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.error || 'Worker 请求失败 (' + resp.status + ')');
+        }
+
+        return resp.json();
+    }
+
+    /** 测试连接 */
+    async function testConnection() {
+        const config = getConfig();
+        if (!config) throw new Error('未配置同步');
+
+        // 尝试读取 exam.enc（即使不存在也能验证连接）
+        const result = await readFile('data/exam.enc');
+        return { success: true, examExists: result.exists };
+    }
+
+    return {
+        getConfig,
+        saveConfig,
+        clearConfig,
+        isConfigured,
+        readFile,
+        writeFiles,
+        testConnection
+    };
+})();

@@ -7,23 +7,42 @@ const AdminApp = (() => {
     let isNewSetup = false;
     let editingQuestionId = null;
     let hasUnsavedChanges = false;
+    let syncMode = false; // 是否通过 Worker 同步
 
     const $ = id => document.getElementById(id);
 
     async function init() {
         bindEvents();
 
-        // Try to load existing bank
-        try {
-            const response = await fetch(ExamConfig.DATA_PATH + 'bank.enc');
-            if (response.ok) {
-                isNewSetup = false;
-                showScreen('login-screen');
-            } else {
-                isNewSetup = true;
-                showScreen('setup-screen');
+        // 更新同步状态显示
+        updateSyncStatusUI();
+
+        // Try to load existing bank — 优先从 Worker，回退到本地
+        let bankExists = false;
+        if (GitHubSync.isConfigured()) {
+            try {
+                const result = await GitHubSync.readFile('data/bank.enc');
+                if (result.exists) {
+                    bankExists = true;
+                    syncMode = true;
+                }
+            } catch (e) {
+                // Worker 连接失败，回退到本地
+                console.warn('Worker 连接失败，回退本地模式:', e.message);
             }
-        } catch (e) {
+        }
+
+        if (!bankExists) {
+            try {
+                const response = await fetch(ExamConfig.DATA_PATH + 'bank.enc');
+                if (response.ok) bankExists = true;
+            } catch (e) { /* ignore */ }
+        }
+
+        if (bankExists) {
+            isNewSetup = false;
+            showScreen('login-screen');
+        } else {
             isNewSetup = true;
             showScreen('setup-screen');
         }
@@ -69,6 +88,11 @@ const AdminApp = (() => {
         $('import-json-btn').addEventListener('click', () => $('import-file-input').click());
         $('import-file-input').addEventListener('change', handleFileImport);
         $('export-btn').addEventListener('click', handleExport);
+
+        // Sync config
+        $('sync-save-btn').addEventListener('click', handleSyncSave);
+        $('sync-test-btn').addEventListener('click', handleSyncTest);
+        $('sync-clear-btn').addEventListener('click', handleSyncClear);
     }
 
     // ===== Auth =====
@@ -79,8 +103,26 @@ const AdminApp = (() => {
 
         showLoading(true);
         try {
-            const response = await fetch(ExamConfig.DATA_PATH + 'bank.enc');
-            const encrypted = await response.text();
+            let encrypted;
+            // 优先从 Worker 读取
+            if (GitHubSync.isConfigured()) {
+                try {
+                    const result = await GitHubSync.readFile('data/bank.enc');
+                    if (result.exists) {
+                        encrypted = result.content;
+                        syncMode = true;
+                    }
+                } catch (e) {
+                    console.warn('Worker 读取失败，回退本地:', e.message);
+                }
+            }
+            // 回退到本地
+            if (!encrypted) {
+                const response = await fetch(ExamConfig.DATA_PATH + 'bank.enc');
+                encrypted = await response.text();
+                syncMode = false;
+            }
+
             const decrypted = await CryptoUtil.decrypt(encrypted.trim(), password);
             bankData = JSON.parse(decrypted);
             adminPassword = password;
@@ -88,7 +130,8 @@ const AdminApp = (() => {
             showScreen('dashboard');
             switchTab('questions');
             renderQuestionList();
-            showToast('登录成功', 'success');
+            updateSyncStatusUI();
+            showToast('登录成功' + (syncMode ? '（云端同步模式）' : '（本地模式）'), 'success');
         } catch (e) {
             showToast('密码错误或数据损坏', 'error');
         } finally {
@@ -370,13 +413,28 @@ const AdminApp = (() => {
                 questions: examQuestions
             };
 
-            // Encrypt exam data with site key
+            // Encrypt
             var examEncrypted = await CryptoUtil.encrypt(JSON.stringify(examData), ExamConfig.getSiteKey());
-
-            // Encrypt bank data with admin password
             var bankEncrypted = await CryptoUtil.encrypt(JSON.stringify(bankData), adminPassword);
 
-            // Download both files
+            // 如果配置了 Worker，直接推送到 GitHub
+            if (GitHubSync.isConfigured()) {
+                try {
+                    await GitHubSync.writeFiles([
+                        { path: 'data/exam.enc', content: examEncrypted },
+                        { path: 'data/bank.enc', content: bankEncrypted }
+                    ], '更新考试题库');
+                    hasUnsavedChanges = false;
+                    syncMode = true;
+                    showToast('已推送到 GitHub！Pages 将在 1-2 分钟后更新', 'success');
+                    return;
+                } catch (e) {
+                    // Worker 推送失败，回退到本地下载
+                    showToast('云端推送失败: ' + e.message + '，回退到本地下载', 'error');
+                }
+            }
+
+            // 本地下载模式
             downloadFile('exam.enc', examEncrypted);
             setTimeout(function() {
                 downloadFile('bank.enc', bankEncrypted);
@@ -430,6 +488,70 @@ const AdminApp = (() => {
         var div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ===== Sync Config =====
+
+    function updateSyncStatusUI() {
+        var badge = $('sync-status-badge');
+        var info = $('sync-current-info');
+        if (!badge || !info) return;
+
+        if (GitHubSync.isConfigured()) {
+            var cfg = GitHubSync.getConfig();
+            badge.textContent = '已配置';
+            badge.className = 'sync-badge connected';
+            info.innerHTML = '<p>✅ Worker 地址: <code>' + escapeHtml(cfg.workerUrl) + '</code></p>';
+            $('sync-worker-url').value = cfg.workerUrl;
+            $('sync-admin-secret').value = cfg.adminSecret;
+        } else {
+            badge.textContent = '未配置';
+            badge.className = 'sync-badge disconnected';
+            info.innerHTML = '<p>未配置云端同步，导出时将下载本地文件</p>';
+        }
+    }
+
+    function handleSyncSave() {
+        var workerUrl = $('sync-worker-url').value.trim();
+        var adminSecret = $('sync-admin-secret').value.trim();
+
+        if (!workerUrl) { showToast('请输入 Worker 地址', 'error'); return; }
+        if (!adminSecret) { showToast('请输入管理员通信密钥', 'error'); return; }
+
+        // 基本URL格式校验
+        try { new URL(workerUrl); } catch {
+            showToast('Worker 地址格式不正确', 'error'); return;
+        }
+
+        GitHubSync.saveConfig(workerUrl, adminSecret);
+        updateSyncStatusUI();
+        showToast('同步配置已保存', 'success');
+    }
+
+    async function handleSyncTest() {
+        if (!GitHubSync.isConfigured()) {
+            showToast('请先保存配置', 'error');
+            return;
+        }
+        showLoading(true);
+        try {
+            var result = await GitHubSync.testConnection();
+            showToast('连接成功！' + (result.examExists ? 'exam.enc 已存在' : 'exam.enc 尚未创建'), 'success');
+        } catch (e) {
+            showToast('连接失败: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    function handleSyncClear() {
+        if (!confirm('确定清除同步配置？之后导出操作将回退到本地下载模式。')) return;
+        GitHubSync.clearConfig();
+        syncMode = false;
+        $('sync-worker-url').value = '';
+        $('sync-admin-secret').value = '';
+        updateSyncStatusUI();
+        showToast('同步配置已清除', 'success');
     }
 
     return { init: init };

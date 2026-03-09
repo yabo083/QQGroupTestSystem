@@ -757,6 +757,34 @@ select {
 .toast.success { background: #065f46; color: #6ee7b7; border: 1px solid #059669; }
 .toast.error { background: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; }
 
+/* ===== Sync Status Badge ===== */
+.sync-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.sync-badge.connected { background: #065f46; color: #6ee7b7; }
+.sync-badge.disconnected { background: #44403c; color: #a8a29e; }
+
+.sync-info { margin-bottom: 16px; }
+.sync-info code {
+    background: var(--bg-lighter);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.sync-card .btn-group {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 /* ===== Loading ===== */
 .loading-overlay {
     position: fixed;
