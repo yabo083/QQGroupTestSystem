@@ -48,6 +48,12 @@ export default {
     const path = url.pathname;
 
     try {
+      // GET /api/check  — 诊断连接（验证 token + 仓库可访问性）
+      if (request.method === 'GET' && path === '/api/check') {
+        const diag = await githubCheckAccess(env);
+        return jsonResponse(diag, diag.ok ? 200 : 502, cors);
+      }
+
       // GET /api/read?file=data/exam.enc  — 读取仓库文件
       if (request.method === 'GET' && path === '/api/read') {
         const file = url.searchParams.get('file');
@@ -61,7 +67,6 @@ export default {
       // PUT /api/write  — 写入仓库文件（支持多文件批量提交）
       if (request.method === 'PUT' && path === '/api/write') {
         const body = await request.json();
-        // body: { files: [{ path: "data/exam.enc", content: "..." }], message: "更新题库" }
         if (!body.files || !Array.isArray(body.files)) {
           return jsonResponse({ error: '缺少 files 数组' }, 400, cors);
         }
@@ -70,6 +75,13 @@ export default {
             return jsonResponse({ error: '不允许的文件路径: ' + f.path }, 400, cors);
           }
         }
+
+        // 写入前先验证仓库可达
+        const access = await githubCheckAccess(env);
+        if (!access.ok) {
+          return jsonResponse({ error: '无法访问仓库: ' + access.error }, 502, cors);
+        }
+
         const result = await githubPutFiles(env, body.files, body.message || '更新考试数据');
         return jsonResponse(result, 200, cors);
       }
@@ -99,6 +111,15 @@ async function githubGetFile(env, filePath) {
   });
 
   if (resp.status === 404) {
+    // 区分「文件不存在」和「仓库不可访问」
+    const body = await resp.json().catch(() => ({}));
+    if (body.message === 'Not Found') {
+      // 可能是仓库不可访问，再验证一次
+      const access = await githubCheckAccess(env);
+      if (!access.ok) {
+        throw new Error('仓库不可访问（' + access.error + '）。请检查 GITHUB_TOKEN 权限、GITHUB_OWNER 和 GITHUB_REPO 是否正确');
+      }
+    }
     return { exists: false, content: null, sha: null };
   }
   if (!resp.ok) {
@@ -107,9 +128,46 @@ async function githubGetFile(env, filePath) {
   }
 
   const data = await resp.json();
-  // GitHub 返回 base64 编码的内容
   const content = atob(data.content.replace(/\n/g, ''));
   return { exists: true, content: content, sha: data.sha };
+}
+
+/** 检查仓库可访问性 */
+async function githubCheckAccess(env) {
+  // 检查环境变量
+  if (!env.GITHUB_TOKEN) return { ok: false, error: '未设置 GITHUB_TOKEN' };
+  if (!env.GITHUB_OWNER) return { ok: false, error: '未设置 GITHUB_OWNER' };
+  if (!env.GITHUB_REPO) return { ok: false, error: '未设置 GITHUB_REPO' };
+
+  const apiUrl = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}`;
+  const resp = await fetch(apiUrl, {
+    headers: {
+      'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'ExamSync-Worker'
+    }
+  });
+
+  if (resp.status === 404) {
+    return { ok: false, error: '仓库 ' + env.GITHUB_OWNER + '/' + env.GITHUB_REPO + ' 不存在或 Token 无权访问' };
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    return { ok: false, error: 'Token 无效或已过期 (' + resp.status + ')' };
+  }
+  if (!resp.ok) {
+    return { ok: false, error: 'GitHub API 异常 (' + resp.status + ')' };
+  }
+
+  const repo = await resp.json();
+  // 检查是否有 push 权限
+  const canPush = repo.permissions && repo.permissions.push;
+  return {
+    ok: true,
+    repo: repo.full_name,
+    private: repo.private,
+    canPush: canPush,
+    message: canPush ? '连接正常，有写入权限' : '连接正常但无写入权限，请检查 PAT 的 Contents: Read and write 权限'
+  };
 }
 
 /** 批量写入文件到 GitHub 仓库（逐个提交） */

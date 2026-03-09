@@ -536,7 +536,12 @@ const AdminApp = (() => {
         showLoading(true);
         try {
             var result = await GitHubSync.testConnection();
-            showToast('连接成功！' + (result.examExists ? 'exam.enc 已存在' : 'exam.enc 尚未创建'), 'success');
+            var msg = '连接成功！仓库: ' + result.repo;
+            if (!result.canPush) {
+                showToast(msg + '（⚠️ 无写入权限，请检查 PAT）', 'error');
+            } else {
+                showToast(msg + '（有写入权限 ✓）', 'success');
+            }
         } catch (e) {
             showToast('连接失败: ' + e.message, 'error');
         } finally {

@@ -73,14 +73,22 @@ const GitHubSync = (() => {
         return resp.json();
     }
 
-    /** 测试连接 */
+    /** 测试连接（使用诊断接口） */
     async function testConnection() {
         const config = getConfig();
         if (!config) throw new Error('未配置同步');
 
-        // 尝试读取 exam.enc（即使不存在也能验证连接）
-        const result = await readFile('data/exam.enc');
-        return { success: true, examExists: result.exists };
+        const url = config.workerUrl + '/api/check';
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: { 'X-Admin-Secret': config.adminSecret }
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+            throw new Error(data.error || '连接失败 (' + resp.status + ')');
+        }
+        return { success: true, repo: data.repo, canPush: data.canPush, message: data.message };
     }
 
     return {
