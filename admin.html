@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理面板 - 入群考试系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Loading -->
+    <div id="loading-overlay" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <p>处理中...</p>
+    </div>
+
+    <!-- Login Screen -->
+    <section id="login-screen" class="screen">
+        <div class="container">
+            <div class="card login-card">
+                <h1>🔐 管理员登录</h1>
+                <p class="subtitle">输入管理员密码以管理题库</p>
+                <div class="form-group">
+                    <label for="login-password">管理员密码</label>
+                    <input type="password" id="login-password" placeholder="请输入管理员密码">
+                </div>
+                <button id="login-btn" class="btn btn-primary btn-lg">登录</button>
+                <p class="subtitle" style="margin-top:16px;margin-bottom:0"><a href="index.html">← 返回考试页面</a></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Setup Screen (First Time) -->
+    <section id="setup-screen" class="screen">
+        <div class="container">
+            <div class="card setup-card">
+                <h1>🔧 首次设置</h1>
+                <p class="subtitle">未检测到题库数据，请设置管理员密码以创建题库</p>
+                <div class="form-group">
+                    <label for="setup-password">设置密码（至少6位）</label>
+                    <input type="password" id="setup-password" placeholder="设置管理员密码" minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="setup-password-confirm">确认密码</label>
+                    <input type="password" id="setup-password-confirm" placeholder="再次输入密码">
+                </div>
+                <button id="setup-btn" class="btn btn-primary btn-lg">创建题库</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="screen">
+        <div class="container admin-container">
+            <header class="admin-header">
+                <h1>📋 考试管理面板</h1>
+                <button onclick="location.reload()" class="btn btn-secondary btn-sm">退出登录</button>
+            </header>
+
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="questions">📝 题库管理</button>
+                <button class="tab-btn" data-tab="verify">🔍 凭证验证</button>
+                <button class="tab-btn" data-tab="io">📦 导入导出</button>
+            </nav>
+
+            <!-- Tab: Questions -->
+            <div id="tab-questions" class="tab-panel active">
+                <div class="panel-header">
+                    <span id="question-count">共 0 题</span>
+                    <button id="add-question-btn" class="btn btn-primary btn-sm">+ 添加题目</button>
+                </div>
+                <div id="question-list" class="question-list"></div>
+            </div>
+
+            <!-- Tab: Verify -->
+            <div id="tab-verify" class="tab-panel">
+                <div class="card verify-card">
+                    <h2>验证考生凭证</h2>
+                    <p>输入考生提供的凭证码，验证其考试成绩真实性。凭证码格式：PASS-玩家ID-时间戳-签名</p>
+                    <div class="form-group">
+                        <label for="verify-code-input">凭证码</label>
+                        <input type="text" id="verify-code-input" placeholder="PASS-PlayerID-1234567890-a1b2c3d4e5f6" autocomplete="off">
+                    </div>
+                    <button id="verify-btn" class="btn btn-primary">验证凭证</button>
+                    <div id="verify-result" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- Tab: Import/Export -->
+            <div id="tab-io" class="tab-panel">
+                <div class="card io-card">
+                    <h2>导入题库</h2>
+                    <p>从 JSON 文件导入题目。首次使用请导入 data/questions-initial.json 初始题库文件。</p>
+                    <input type="file" id="import-file-input" accept=".json" style="display:none">
+                    <button id="import-json-btn" class="btn btn-secondary">📂 选择 JSON 文件导入</button>
+
+                    <hr class="divider">
+
+                    <h2>导出加密文件</h2>
+                    <p>生成加密的 exam.enc 和 bank.enc 文件。下载后替换 data/ 目录中的文件并部署即可生效。</p>
+                    <button id="export-btn" class="btn btn-primary">🔒 导出加密文件</button>
+
+                    <div class="deploy-steps">
+                        <strong>部署步骤：</strong>
+                        <ol>
+                            <li>点击上方按钮导出，浏览器会下载 <code>exam.enc</code> 和 <code>bank.enc</code> 两个文件</li>
+                            <li>将两个文件放入项目的 <code>data/</code> 目录中（替换旧文件）</li>
+                            <li>提交并推送到 GitHub 仓库：<code>git add . &amp;&amp; git commit -m "更新题库" &amp;&amp; git push</code></li>
+                            <li>GitHub Pages 自动部署完成后，考生即可使用新题库</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Question Edit Modal -->
+    <div id="question-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">添加题目</h2>
+            <div class="form-group">
+                <label for="modal-category">分类</label>
+                <select id="modal-category">
+                    <option value="新人须知">新人须知</option>
+                    <option value="基础要求">基础要求</option>
+                    <option value="行为规则">行为规则</option>
+                    <option value="重要规则">重要规则</option>
+                    <option value="其他规定">其他规定</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="modal-stem">题干</label>
+                <textarea id="modal-stem" rows="3" placeholder="请输入题目内容"></textarea>
+            </div>
+            <div class="options-edit">
+                <p class="hint" style="margin-bottom:10px">选中左侧圆圈标记正确答案 ●</p>
+                <div class="form-group option-edit-row">
+                    <input type="radio" name="correct-answer" value="0" id="correct-0">
+                    <label for="correct-0">A</label>
+                    <input type="text" id="modal-option-0" placeholder="选项 A">
+                </div>
+                <div class="form-group option-edit-row">
+                    <input type="radio" name="correct-answer" value="1" id="correct-1">
+                    <label for="correct-1">B</label>
+                    <input type="text" id="modal-option-1" placeholder="选项 B">
+                </div>
+                <div class="form-group option-edit-row">
+                    <input type="radio" name="correct-answer" value="2" id="correct-2">
+                    <label for="correct-2">C</label>
+                    <input type="text" id="modal-option-2" placeholder="选项 C">
+                </div>
+                <div class="form-group option-edit-row">
+                    <input type="radio" name="correct-answer" value="3" id="correct-3">
+                    <label for="correct-3">D</label>
+                    <input type="text" id="modal-option-3" placeholder="选项 D">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="modal-cancel-btn" class="btn btn-secondary">取消</button>
+                <button id="modal-save-btn" class="btn btn-primary">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/crypto.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

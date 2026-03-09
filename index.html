@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>入群考试系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display:none">
+        <div class="spinner"></div>
+        <p>加载中...</p>
+    </div>
+
+    <!-- Screen 1: Start -->
+    <section id="start-screen" class="screen active">
+        <div class="container">
+            <div class="card start-card">
+                <h1>⛏️ 服务器入群考试</h1>
+                <p class="subtitle">请在考试前仔细阅读服务器公告</p>
+                <div class="form-group">
+                    <label for="player-id-input">MC 正版 ID</label>
+                    <input type="text" id="player-id-input" placeholder="请输入你的 MC 正版 ID" maxlength="16" autocomplete="off">
+                </div>
+                <button id="start-btn" class="btn btn-primary btn-lg">开始考试</button>
+                <div class="exam-info">
+                    <div class="info-item">📝 共 15 道选择题</div>
+                    <div class="info-item">💯 满分 100 分</div>
+                    <div class="info-item">✅ 满分通过</div>
+                </div>
+            </div>
+        </div>
+        <footer class="site-footer">
+            <a href="admin.html" class="admin-link">管理入口</a>
+        </footer>
+    </section>
+
+    <!-- Screen 2: Exam -->
+    <section id="exam-screen" class="screen">
+        <div class="container">
+            <div class="card exam-card">
+                <div class="exam-header">
+                    <span id="question-number">第 1 / 15 题</span>
+                    <span id="question-category" class="category-tag"></span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div id="progress-text" class="progress-text">已答 0/15</div>
+
+                <div class="question-area">
+                    <h2 id="question-stem" class="question-stem"></h2>
+                    <div id="options-container" class="options-container"></div>
+                </div>
+
+                <div class="exam-controls">
+                    <button id="prev-btn" class="btn btn-secondary">上一题</button>
+                    <div id="question-nav" class="question-nav"></div>
+                    <button id="next-btn" class="btn btn-primary">下一题</button>
+                    <button id="submit-btn" class="btn btn-accent" style="display:none">提交答卷</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screen 3: Result -->
+    <section id="result-screen" class="screen">
+        <div class="container">
+            <div class="card result-card">
+                <h1 id="result-status" class="result-status"></h1>
+                <div class="score-display">
+                    <span class="score-number" id="result-score">0</span>
+                    <span class="score-label">/ 100</span>
+                </div>
+                <p class="result-correct">正确: <span id="result-correct">0/15</span></p>
+                <p id="result-message" class="result-message"></p>
+
+                <!-- Credential Section (pass) -->
+                <div id="credential-section" class="credential-section" style="display:none">
+                    <div class="credential-info">
+                        <p>玩家: <strong id="credential-player"></strong></p>
+                        <p>时间: <span id="credential-time"></span></p>
+                    </div>
+                    <div class="credential-code-box">
+                        <label>通过凭证码:</label>
+                        <code id="credential-code"></code>
+                    </div>
+                    <div class="credential-actions">
+                        <button id="copy-credential-btn" class="btn btn-primary">📋 复制凭证码</button>
+                        <button id="download-cert-btn" class="btn btn-secondary">🖼️ 下载凭证图片</button>
+                    </div>
+                    <p class="credential-hint">请将凭证码发送给群主以完成入群验证</p>
+                </div>
+
+                <!-- Fail Section -->
+                <div id="fail-section" class="fail-section" style="display:none">
+                    <button id="retry-btn" class="btn btn-primary btn-lg">🔄 重新考试</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="js/crypto.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/exam.js"></script>
+</body>
+</html>

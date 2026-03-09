@@ -1,0 +1,14 @@
+# 原始公告文件（含答案，不上传）
+服务器公告.md
+服务器公告.docx
+
+# 初始明文题库（仅本地导入用，不上传）
+data/questions-initial.json
+
+# 管理员加密题库（含明文答案，仅管理员本地保留）
+data/bank.enc
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
