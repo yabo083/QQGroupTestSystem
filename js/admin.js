@@ -93,6 +93,19 @@ const AdminApp = (() => {
         $('sync-save-btn').addEventListener('click', handleSyncSave);
         $('sync-test-btn').addEventListener('click', handleSyncTest);
         $('sync-clear-btn').addEventListener('click', handleSyncClear);
+
+        // Settings
+        var settingsInput = $('settings-questions-per-exam');
+        if (settingsInput) {
+            settingsInput.addEventListener('change', handleSettingsChange);
+            settingsInput.addEventListener('blur', handleSettingsChange);
+        }
+
+        // Quick sync button
+        var quickSyncBtn = $('quick-sync-btn');
+        if (quickSyncBtn) {
+            quickSyncBtn.addEventListener('click', handleQuickSync);
+        }
     }
 
     // ===== Auth =====
@@ -125,12 +138,19 @@ const AdminApp = (() => {
 
             const decrypted = await CryptoUtil.decrypt(encrypted.trim(), password);
             bankData = JSON.parse(decrypted);
+            // 向后兼容：老数据没有 settings
+            if (!bankData.settings) {
+                bankData.settings = { questionsPerExam: 15 };
+            }
             adminPassword = password;
             hasUnsavedChanges = false;
             showScreen('dashboard');
             switchTab('questions');
             renderQuestionList();
+            initDragDrop();
             updateSyncStatusUI();
+            updateSettingsUI();
+            checkDraftRecovery();
             showToast('登录成功' + (syncMode ? '（云端同步模式）' : '（本地模式）'), 'success');
         } catch (e) {
             showToast('密码错误或数据损坏', 'error');
@@ -157,6 +177,9 @@ const AdminApp = (() => {
             version: ExamConfig.VERSION,
             credentialSecret: CryptoUtil.generateRandomHex(32),
             salt: CryptoUtil.generateRandomHex(16),
+            settings: {
+                questionsPerExam: 15  // 默认15题，0表示全部
+            },
             questions: []
         };
 
@@ -183,6 +206,7 @@ const AdminApp = (() => {
     function renderQuestionList() {
         var questions = bankData.questions;
         $('question-count').textContent = '共 ' + questions.length + ' 题';
+        updateSyncWarningUI();
 
         if (questions.length === 0) {
             $('question-list').innerHTML = '<div class="empty-state"><p>题库为空</p><p>请添加题目或在「导入导出」页导入题库 JSON</p></div>';
@@ -192,8 +216,9 @@ const AdminApp = (() => {
         var labels = ['A', 'B', 'C', 'D'];
         var html = '';
         questions.forEach(function(q, index) {
-            html += '<div class="question-item">' +
+            html += '<div class="question-item" draggable="true" data-id="' + q.id + '" data-index="' + index + '">' +
                 '<div class="question-item-header">' +
+                    '<span class="drag-handle" title="拖拽排序">☰</span>' +
                     '<span class="question-index">#' + (index + 1) + '</span>' +
                     '<span class="question-category-tag">' + escapeHtml(q.category || '未分类') + '</span>' +
                     '<div class="question-actions">' +
@@ -281,6 +306,8 @@ const AdminApp = (() => {
         hasUnsavedChanges = true;
         hideQuestionModal();
         renderQuestionList();
+        initDragDrop();
+        scheduleDraftSave();
         showToast(editingQuestionId ? '题目已更新' : '题目已添加', 'success');
     }
 
@@ -294,6 +321,8 @@ const AdminApp = (() => {
         bankData.questions = bankData.questions.filter(function(q) { return q.id !== id; });
         hasUnsavedChanges = true;
         renderQuestionList();
+        initDragDrop();
+        scheduleDraftSave();
         showToast('题目已删除', 'success');
     }
 
@@ -372,6 +401,8 @@ const AdminApp = (() => {
 
                 hasUnsavedChanges = true;
                 renderQuestionList();
+                initDragDrop();
+                scheduleDraftSave();
                 showToast('成功导入 ' + questions.length + ' 道题目', 'success');
             } catch (err) {
                 showToast('导入失败: ' + err.message, 'error');
@@ -384,10 +415,6 @@ const AdminApp = (() => {
     async function handleExport() {
         if (!bankData || bankData.questions.length === 0) {
             showToast('题库为空，请先添加题目', 'error');
-            return;
-        }
-        if (bankData.questions.length < ExamConfig.QUESTIONS_PER_EXAM) {
-            showToast('题库至少需要 ' + ExamConfig.QUESTIONS_PER_EXAM + ' 题（当前 ' + bankData.questions.length + ' 题）', 'error');
             return;
         }
 
@@ -410,6 +437,7 @@ const AdminApp = (() => {
             var examData = {
                 version: bankData.version,
                 salt: bankData.salt,
+                settings: bankData.settings || { questionsPerExam: 15 },
                 questions: examQuestions
             };
 
@@ -426,6 +454,8 @@ const AdminApp = (() => {
                     ], '更新考试题库');
                     hasUnsavedChanges = false;
                     syncMode = true;
+                    clearDraft();
+                    updateSyncWarningUI();
                     showToast('已推送到 GitHub！Pages 将在 1-2 分钟后更新', 'success');
                     return;
                 } catch (e) {
@@ -557,6 +587,189 @@ const AdminApp = (() => {
         $('sync-admin-secret').value = '';
         updateSyncStatusUI();
         showToast('同步配置已清除', 'success');
+    }
+
+    // ===== Settings UI =====
+
+    function updateSettingsUI() {
+        var input = $('settings-questions-per-exam');
+        if (!input || !bankData) return;
+        var val = (bankData.settings && bankData.settings.questionsPerExam) || 15;
+        input.value = val;
+        // 更新提示
+        var hint = $('settings-questions-hint');
+        if (hint) {
+            if (val <= 0 || val >= bankData.questions.length) {
+                hint.textContent = '当前设置：答全部 ' + bankData.questions.length + ' 题';
+            } else {
+                hint.textContent = '当前设置：从 ' + bankData.questions.length + ' 题中随机抽 ' + val + ' 题';
+            }
+        }
+    }
+
+    function handleSettingsChange() {
+        var input = $('settings-questions-per-exam');
+        if (!input || !bankData) return;
+        var val = parseInt(input.value) || 0;
+        if (!bankData.settings) bankData.settings = {};
+        bankData.settings.questionsPerExam = val;
+        hasUnsavedChanges = true;
+        updateSettingsUI();
+        updateSyncWarningUI();
+        scheduleDraftSave();
+        showToast('答题数量已更新，请同步以生效', 'success');
+    }
+
+    // ===== Sync Warning & Quick Sync =====
+
+    function updateSyncWarningUI() {
+        var bar = $('sync-warning-bar');
+        var btn = $('quick-sync-btn');
+        if (!bar || !btn) return;
+
+        if (hasUnsavedChanges) {
+            bar.style.display = 'flex';
+            btn.disabled = false;
+        } else {
+            bar.style.display = 'none';
+            btn.disabled = true;
+        }
+    }
+
+    async function handleQuickSync() {
+        await handleExport();
+        updateSyncWarningUI();
+    }
+
+    // ===== Draft (localStorage) =====
+
+    var DRAFT_KEY = 'exam_bank_draft';
+    var draftTimer = null;
+
+    function scheduleDraftSave() {
+        if (draftTimer) clearTimeout(draftTimer);
+        draftTimer = setTimeout(saveDraft, 3000);
+    }
+
+    function saveDraft() {
+        if (!bankData) return;
+        try {
+            var draft = {
+                timestamp: Date.now(),
+                data: bankData
+            };
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        } catch (e) {
+            console.warn('保存草稿失败:', e);
+        }
+    }
+
+    function clearDraft() {
+        try {
+            localStorage.removeItem(DRAFT_KEY);
+        } catch (e) { /* ignore */ }
+    }
+
+    function checkDraftRecovery() {
+        try {
+            var raw = localStorage.getItem(DRAFT_KEY);
+            if (!raw) return;
+            var draft = JSON.parse(raw);
+            if (!draft || !draft.data || !draft.timestamp) return;
+            // 如果草稿比当前数据新，提示恢复
+            var draftTime = new Date(draft.timestamp);
+            var timeStr = draftTime.toLocaleString('zh-CN');
+            if (confirm('发现本地草稿（' + timeStr + '），是否恢复？\n\n选择「确定」恢复草稿内容\n选择「取消」使用云端数据并删除草稿')) {
+                bankData = draft.data;
+                hasUnsavedChanges = true;
+                renderQuestionList();
+                updateSettingsUI();
+                showToast('已恢复本地草稿', 'success');
+            } else {
+                clearDraft();
+            }
+        } catch (e) {
+            console.warn('读取草稿失败:', e);
+            clearDraft();
+        }
+    }
+
+    // ===== Drag & Drop =====
+
+    var draggedItem = null;
+
+    function initDragDrop() {
+        var list = $('question-list');
+        if (!list) return;
+
+        list.addEventListener('dragstart', function(e) {
+            var item = e.target.closest('.question-item');
+            if (!item) return;
+            draggedItem = item;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.index);
+        });
+
+        list.addEventListener('dragend', function(e) {
+            var item = e.target.closest('.question-item');
+            if (item) item.classList.remove('dragging');
+            draggedItem = null;
+            // 移除所有 drop 指示
+            list.querySelectorAll('.question-item').forEach(function(el) {
+                el.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom');
+            });
+        });
+
+        list.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            var item = e.target.closest('.question-item');
+            if (!item || item === draggedItem) return;
+            // 判断插入上方还是下方
+            var rect = item.getBoundingClientRect();
+            var midY = rect.top + rect.height / 2;
+            list.querySelectorAll('.question-item').forEach(function(el) {
+                el.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            if (e.clientY < midY) {
+                item.classList.add('drag-over-top');
+            } else {
+                item.classList.add('drag-over-bottom');
+            }
+        });
+
+        list.addEventListener('dragleave', function(e) {
+            var item = e.target.closest('.question-item');
+            if (item) {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            }
+        });
+
+        list.addEventListener('drop', function(e) {
+            e.preventDefault();
+            var targetItem = e.target.closest('.question-item');
+            if (!targetItem || !draggedItem || targetItem === draggedItem) return;
+
+            var fromIndex = parseInt(draggedItem.dataset.index);
+            var toIndex = parseInt(targetItem.dataset.index);
+            // 判断上半还是下半
+            var rect = targetItem.getBoundingClientRect();
+            var insertAfter = e.clientY >= rect.top + rect.height / 2;
+            if (insertAfter && toIndex < fromIndex) toIndex++;
+            else if (!insertAfter && toIndex > fromIndex) toIndex--;
+
+            // 执行数组移动
+            var questions = bankData.questions;
+            var moved = questions.splice(fromIndex, 1)[0];
+            questions.splice(toIndex, 0, moved);
+
+            hasUnsavedChanges = true;
+            renderQuestionList();
+            initDragDrop();
+            scheduleDraftSave();
+            showToast('题目顺序已调整', 'success');
+        });
     }
 
     return { init: init };

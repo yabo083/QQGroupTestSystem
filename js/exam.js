@@ -48,8 +48,16 @@ const ExamApp = (() => {
         try {
             examData = await loadExamData();
 
-            if (!examData.questions || examData.questions.length < ExamConfig.QUESTIONS_PER_EXAM) {
-                throw new Error('题库题目不足（需至少 ' + ExamConfig.QUESTIONS_PER_EXAM + ' 题），请联系管理员');
+            // 动态读取答题数量（向后兼容：旧数据默认 15 题）
+            var questionsPerExam = (examData.settings && examData.settings.questionsPerExam) || ExamConfig.QUESTIONS_PER_EXAM;
+            // 如果设置为 0 或负数，表示答全部题
+            if (questionsPerExam <= 0) questionsPerExam = examData.questions.length;
+            // 不能超过题库数量
+            questionsPerExam = Math.min(questionsPerExam, examData.questions.length);
+            examData._questionsPerExam = questionsPerExam;
+
+            if (!examData.questions || examData.questions.length < 1) {
+                throw new Error('题库为空，请联系管理员');
             }
 
             selectRandomQuestions();
@@ -69,13 +77,14 @@ const ExamApp = (() => {
         const pool = examData.questions.slice();
         selectedQuestions = [];
         shuffleMaps = [];
+        var questionsPerExam = examData._questionsPerExam;
 
         // Fisher-Yates shuffle
         for (let i = pool.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
         }
-        selectedQuestions = pool.slice(0, ExamConfig.QUESTIONS_PER_EXAM);
+        selectedQuestions = pool.slice(0, questionsPerExam);
 
         // Shuffle options for each question
         selectedQuestions.forEach(() => {

@@ -65,6 +65,21 @@
 
             <!-- Tab: Questions -->
             <div id="tab-questions" class="tab-panel active">
+                <!-- Sync Warning Bar -->
+                <div id="sync-warning-bar" class="sync-warning-bar" style="display:none">
+                    <span class="sync-warning-text">⚠️ 有未同步的修改，请点击同步以保存到云端，否则可能丢失</span>
+                    <button id="quick-sync-btn" class="btn btn-primary btn-sm" disabled>🔄 同步到云端</button>
+                </div>
+
+                <!-- Settings Section -->
+                <div class="settings-section">
+                    <div class="settings-row">
+                        <label for="settings-questions-per-exam">每次答题数量：</label>
+                        <input type="number" id="settings-questions-per-exam" min="0" max="100" value="15" class="input-sm">
+                        <span id="settings-questions-hint" class="settings-hint">输入 0 表示答全部题目</span>
+                    </div>
+                </div>
+
                 <div class="panel-header">
                     <span id="question-count">共 0 题</span>
                     <button id="add-question-btn" class="btn btn-primary btn-sm">+ 添加题目</button>

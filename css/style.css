@@ -524,6 +524,64 @@ select {
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fadeIn 0.2s ease; }
 
+/* Sync Warning Bar */
+.sync-warning-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: #7f1d1d;
+    border: 1px solid #b91c1c;
+    border-radius: var(--radius-sm);
+    color: #fca5a5;
+}
+.sync-warning-text {
+    font-size: 14px;
+    font-weight: 500;
+}
+.sync-warning-bar .btn {
+    flex-shrink: 0;
+}
+
+/* Settings Section */
+.settings-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.settings-row label {
+    font-size: 14px;
+    color: var(--text-color);
+    white-space: nowrap;
+}
+.input-sm {
+    width: 80px;
+    padding: 6px 10px;
+    font-size: 14px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-color);
+}
+.input-sm:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+.settings-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
 /* Panel Header */
 .panel-header {
     display: flex;
@@ -548,9 +606,37 @@ select {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: 16px;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, transform 0.15s, opacity 0.15s;
+    cursor: default;
 }
 .question-item:hover { border-color: var(--primary-dark); }
+.question-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+.question-item.drag-over-top {
+    border-top: 3px solid var(--primary-color);
+}
+.question-item.drag-over-bottom {
+    border-bottom: 3px solid var(--primary-color);
+}
+
+.drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+}
+.drag-handle:hover {
+    background: var(--bg-lighter);
+    color: var(--text-color);
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
 
 .question-item-header {
     display: flex;
