@@ -209,6 +209,7 @@ const AdminApp = (() => {
         var questions = bankData.questions;
         $('question-count').textContent = '共 ' + questions.length + ' 题';
         updateSyncWarningUI();
+        updateSettingsUI();
 
         if (questions.length === 0) {
             $('question-list').innerHTML = '<div class="empty-state"><p>题库为空</p><p>请添加题目或在「导入导出」页导入题库 JSON</p></div>';
@@ -281,7 +282,9 @@ const AdminApp = (() => {
         var correctRadio = document.querySelector('input[name="correct-answer"]:checked');
 
         if (!stem) { showToast('请输入题干', 'error'); return; }
+        if (stem.length > 500) { showToast('题干过长（最多500字）', 'error'); return; }
         if (options.some(function(opt) { return !opt; })) { showToast('请填写所有选项', 'error'); return; }
+        if (options.some(function(opt) { return opt.length > 200; })) { showToast('选项过长（最多200字）', 'error'); return; }
         if (!correctRadio) { showToast('请选择正确答案', 'error'); return; }
 
         var correctIndex = parseInt(correctRadio.value);
@@ -384,14 +387,29 @@ const AdminApp = (() => {
                 if (!Array.isArray(questions)) throw new Error('JSON 格式应为数组');
 
                 questions.forEach(function(q, i) {
-                    if (!q.stem || !Array.isArray(q.options) || q.options.length !== 4 || typeof q.correctIndex !== 'number') {
-                        throw new Error('第 ' + (i + 1) + ' 题格式错误');
+                    if (!q.stem || typeof q.stem !== 'string') {
+                        throw new Error('第 ' + (i + 1) + ' 题缺少题干或格式错误');
                     }
-                    if (q.correctIndex < 0 || q.correctIndex > 3) {
-                        throw new Error('第 ' + (i + 1) + ' 题 correctIndex 应为 0-3');
+                    if (!Array.isArray(q.options) || q.options.length !== 4) {
+                        throw new Error('第 ' + (i + 1) + ' 题必须有 4 个选项');
                     }
-                    if (!q.id) q.id = 'q' + String(Date.now()).slice(-6) + String(i).padStart(3, '0');
-                    if (!q.category) q.category = '未分类';
+                    if (q.options.some(function(o) { return typeof o !== 'string' || !o.trim(); })) {
+                        throw new Error('第 ' + (i + 1) + ' 题选项不能为空或非字符串');
+                    }
+                    if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) {
+                        throw new Error('第 ' + (i + 1) + ' 题 correctIndex 应为 0-3 的数字');
+                    }
+                    if (q.stem.length > 500) throw new Error('第 ' + (i + 1) + ' 题题干过长（最多500字）');
+                    if (q.options.some(function(o) { return o.length > 200; })) {
+                        throw new Error('第 ' + (i + 1) + ' 题选项过长（最多200字）');
+                    }
+                    // 清洗字段：只保留必要属性
+                    q.stem = q.stem.trim();
+                    q.options = q.options.map(function(o) { return o.trim(); });
+                    q.correctIndex = Math.floor(q.correctIndex);
+                    if (!q.id || typeof q.id !== 'string') q.id = 'q' + String(Date.now()).slice(-6) + String(i).padStart(3, '0');
+                    q.id = q.id.trim().substring(0, 50);
+                    q.category = (typeof q.category === 'string' && q.category.trim()) ? q.category.trim().substring(0, 30) : '未分类';
                 });
 
                 var action = 'replace';
@@ -630,6 +648,9 @@ const AdminApp = (() => {
         var input = $('settings-questions-per-exam');
         if (!input || !bankData) return;
         var val = parseInt(input.value) || 0;
+        if (val < 0) val = 0;
+        if (val > 999) val = 999;
+        input.value = val;
         if (!bankData.settings) bankData.settings = {};
         bankData.settings.questionsPerExam = val;
         hasUnsavedChanges = true;
