@@ -8,6 +8,7 @@ const AdminApp = (() => {
     let editingQuestionId = null;
     let hasUnsavedChanges = false;
     let syncMode = false; // 是否通过 Worker 同步
+    let remoteBankSha = null; // 乐观锁：上次读取时的 bank.enc SHA
 
     const $ = id => document.getElementById(id);
 
@@ -123,6 +124,7 @@ const AdminApp = (() => {
                     const result = await GitHubSync.readFile('data/bank.enc');
                     if (result.exists) {
                         encrypted = result.content;
+                        remoteBankSha = result.sha;
                         syncMode = true;
                     }
                 } catch (e) {
@@ -317,13 +319,18 @@ const AdminApp = (() => {
     }
 
     function deleteQuestion(id) {
-        if (!confirm('确定要删除这道题目吗？')) return;
+        var remaining = bankData.questions.length - 1;
+        if (remaining < 5) {
+            if (!confirm('⚠️ 删除后仅剩 ' + remaining + ' 道题！题目过少会影响考试质量。确定要删除吗？')) return;
+        } else {
+            if (!confirm('确定要删除这道题目吗？')) return;
+        }
         bankData.questions = bankData.questions.filter(function(q) { return q.id !== id; });
         hasUnsavedChanges = true;
         renderQuestionList();
         initDragDrop();
         scheduleDraftSave();
-        showToast('题目已删除', 'success');
+        showToast('题目已删除（剩余 ' + bankData.questions.length + ' 道）', 'success');
     }
 
     // ===== Credential Verification =====
@@ -445,20 +452,32 @@ const AdminApp = (() => {
             var examEncrypted = await CryptoUtil.encrypt(JSON.stringify(examData), ExamConfig.getSiteKey());
             var bankEncrypted = await CryptoUtil.encrypt(JSON.stringify(bankData), adminPassword);
 
-            // 如果配置了 Worker，直接推送到 GitHub
+            // 如果配置了 Worker，直接推送到 GitHub（带乐观锁）
             if (GitHubSync.isConfigured()) {
                 try {
-                    await GitHubSync.writeFiles([
-                        { path: 'data/exam.enc', content: examEncrypted },
-                        { path: 'data/bank.enc', content: bankEncrypted }
-                    ], '更新考试题库');
+                    // bank.enc 带 SHA 乐观锁，exam.enc 无锁（派生文件）
+                    var writeResult = await GitHubSync.writeFiles([
+                        { path: 'data/bank.enc', content: bankEncrypted, sha: remoteBankSha },
+                        { path: 'data/exam.enc', content: examEncrypted }
+                    ], '更新考试题库', bankData.questions.length);
+                    // 写入成功，更新本地 SHA
+                    if (writeResult.files) {
+                        writeResult.files.forEach(function(f) {
+                            if (f.path === 'data/bank.enc') remoteBankSha = f.sha;
+                        });
+                    }
                     hasUnsavedChanges = false;
                     syncMode = true;
                     clearDraft();
                     updateSyncWarningUI();
-                    showToast('已推送到 GitHub！Pages 将在 1-2 分钟后更新', 'success');
+                    showToast('已推送到 GitHub！Pages 将在1-2分钟后更新', 'success');
                     return;
                 } catch (e) {
+                    if (e.conflict) {
+                        // 乐观锁冲突：另一位管理员在期间修改了题库
+                        await handleConflict(e.conflictData);
+                        return;
+                    }
                     // Worker 推送失败，回退到本地下载
                     showToast('云端推送失败: ' + e.message + '，回退到本地下载', 'error');
                 }
@@ -692,6 +711,183 @@ const AdminApp = (() => {
             console.warn('读取草稿失败:', e);
             clearDraft();
         }
+    }
+
+    // ===== 冲突处理（乐观锁） =====
+
+    async function handleConflict(conflictData) {
+        // 自动保存草稿，防止丢失
+        saveDraft();
+        showLoading(false);
+
+        try {
+            // 解密远程版本的 bank.enc
+            var remoteDecrypted = await CryptoUtil.decrypt(conflictData.currentContent.trim(), adminPassword);
+            var remoteBankData = JSON.parse(remoteDecrypted);
+
+            // 计算差异
+            var diff = diffQuestionBanks(bankData.questions, remoteBankData.questions);
+
+            // 显示冲突对话框
+            showConflictModal(diff, remoteBankData, conflictData.currentSha);
+        } catch (e) {
+            showToast('冲突解析失败: ' + e.message + '。本地修改已保存为草稿，请刷新后重试', 'error');
+        }
+    }
+
+    function diffQuestionBanks(localQuestions, remoteQuestions) {
+        var localMap = {};
+        localQuestions.forEach(function(q) { localMap[q.id] = q; });
+        var remoteMap = {};
+        remoteQuestions.forEach(function(q) { remoteMap[q.id] = q; });
+
+        var localOnly = [];  // 本地新增
+        var remoteOnly = []; // 对方新增
+        var modified = [];   // 双方都修改
+        var unchanged = 0;
+
+        localQuestions.forEach(function(q) {
+            if (!remoteMap[q.id]) {
+                localOnly.push(q);
+            } else if (q.stem !== remoteMap[q.id].stem ||
+                       q.correctIndex !== remoteMap[q.id].correctIndex ||
+                       JSON.stringify(q.options) !== JSON.stringify(remoteMap[q.id].options)) {
+                modified.push({ local: q, remote: remoteMap[q.id] });
+            } else {
+                unchanged++;
+            }
+        });
+
+        remoteQuestions.forEach(function(q) {
+            if (!localMap[q.id]) {
+                remoteOnly.push(q);
+            }
+        });
+
+        return { localOnly: localOnly, remoteOnly: remoteOnly, modified: modified, unchanged: unchanged };
+    }
+
+    function showConflictModal(diff, remoteBankData, remoteSha) {
+        var html = '<div class="conflict-modal-content">';
+        html += '<h2>\u26a0\ufe0f \u540c\u6b65\u51b2\u7a81</h2>';
+        html += '<p>\u53e6\u4e00\u4f4d\u7ba1\u7406\u5458\u5728\u4f60\u7f16\u8f91\u671f\u95f4\u66f4\u65b0\u4e86\u9898\u5e93\uff0c\u9700\u8981\u5904\u7406\u51b2\u7a81\u3002</p>';
+
+        html += '<div class="conflict-summary">';
+        html += '<div class="conflict-side"><strong>\ud83d\udcbb \u672c\u5730\u7248\u672c</strong><span>' + bankData.questions.length + ' \u9898</span></div>';
+        html += '<div class="conflict-vs">VS</div>';
+        html += '<div class="conflict-side"><strong>\u2601\ufe0f \u4e91\u7aef\u7248\u672c</strong><span>' + remoteBankData.questions.length + ' \u9898</span></div>';
+        html += '</div>';
+
+        // 差异明细
+        if (diff.localOnly.length > 0) {
+            html += '<div class="diff-section diff-added">';
+            html += '<h3>\ud83d\udcdd \u4f60\u65b0\u589e\u7684\u9898\u76ee (' + diff.localOnly.length + ')</h3>';
+            diff.localOnly.forEach(function(q) {
+                html += '<div class="diff-item">' + escapeHtml(q.stem.substring(0, 80)) + (q.stem.length > 80 ? '...' : '') + '</div>';
+            });
+            html += '</div>';
+        }
+        if (diff.remoteOnly.length > 0) {
+            html += '<div class="diff-section diff-remote">';
+            html += '<h3>\ud83d\udce5 \u5bf9\u65b9\u65b0\u589e\u7684\u9898\u76ee (' + diff.remoteOnly.length + ')</h3>';
+            diff.remoteOnly.forEach(function(q) {
+                html += '<div class="diff-item">' + escapeHtml(q.stem.substring(0, 80)) + (q.stem.length > 80 ? '...' : '') + '</div>';
+            });
+            html += '</div>';
+        }
+        if (diff.modified.length > 0) {
+            html += '<div class="diff-section diff-modified">';
+            html += '<h3>\u270f\ufe0f \u53cc\u65b9\u90fd\u4fee\u6539\u4e86 (' + diff.modified.length + ')</h3>';
+            diff.modified.forEach(function(m) {
+                html += '<div class="diff-item"><span class="diff-label-local">\u672c\u5730:</span> ' + escapeHtml(m.local.stem.substring(0, 60)) + (m.local.stem.length > 60 ? '...' : '') + '</div>';
+                html += '<div class="diff-item"><span class="diff-label-remote">\u4e91\u7aef:</span> ' + escapeHtml(m.remote.stem.substring(0, 60)) + (m.remote.stem.length > 60 ? '...' : '') + '</div>';
+            });
+            html += '</div>';
+        }
+        html += '<p class="diff-unchanged">\u2705 \u4e00\u81f4\u9898\u76ee: ' + diff.unchanged + ' \u9053</p>';
+
+        // 操作按钮
+        html += '<div class="conflict-actions">';
+        html += '<button class="btn btn-primary" id="conflict-merge-btn" title="\u5408\u5e76\u4e24\u4e2a\u7248\u672c\uff1a\u4fdd\u7559\u6240\u6709\u9898\u76ee\uff0c\u51b2\u7a81\u9898\u76ee\u4f7f\u7528\u672c\u5730\u7248\u672c">\ud83d\udd00 \u667a\u80fd\u5408\u5e76</button>';
+        html += '<button class="btn btn-danger" id="conflict-force-btn">\ud83d\udd28 \u5f3a\u5236\u8986\u76d6\u4e91\u7aef</button>';
+        html += '<button class="btn btn-secondary" id="conflict-load-remote-btn">\ud83d\udce5 \u4f7f\u7528\u4e91\u7aef\u7248\u672c</button>';
+        html += '</div>';
+        html += '<p class="conflict-hint">\ud83d\udca1 \u672c\u5730\u4fee\u6539\u5df2\u81ea\u52a8\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u4e0d\u4f1a\u4e22\u5931</p>';
+        html += '</div>';
+
+        var modal = document.createElement('div');
+        modal.className = 'modal show';
+        modal.id = 'conflict-modal';
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+
+        // 点击背景关闭
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) closeConflictModal();
+        });
+
+        document.getElementById('conflict-merge-btn').onclick = function() {
+            closeConflictModal();
+            mergeVersions(remoteBankData, remoteSha);
+        };
+        document.getElementById('conflict-force-btn').onclick = function() {
+            closeConflictModal();
+            forceOverwrite();
+        };
+        document.getElementById('conflict-load-remote-btn').onclick = function() {
+            closeConflictModal();
+            loadRemoteVersion(remoteBankData, remoteSha);
+        };
+    }
+
+    function closeConflictModal() {
+        var modal = document.getElementById('conflict-modal');
+        if (modal) modal.remove();
+    }
+
+    async function forceOverwrite() {
+        // 清除 SHA → Worker 将获取最新 SHA → 强制覆盖
+        remoteBankSha = null;
+        showToast('\u6b63\u5728\u5f3a\u5236\u8986\u76d6...', 'success');
+        await handleExport();
+    }
+
+    function loadRemoteVersion(remoteBankData, remoteSha) {
+        bankData = remoteBankData;
+        if (!bankData.settings) bankData.settings = { questionsPerExam: 15 };
+        remoteBankSha = remoteSha;
+        hasUnsavedChanges = false;
+        clearDraft();
+        renderQuestionList();
+        initDragDrop();
+        updateSettingsUI();
+        updateSyncWarningUI();
+        showToast('\u5df2\u52a0\u8f7d\u4e91\u7aef\u7248\u672c', 'success');
+    }
+
+    function mergeVersions(remoteBankData, remoteSha) {
+        var localMap = {};
+        bankData.questions.forEach(function(q) { localMap[q.id] = q; });
+
+        // 以\u672c\u5730\u4e3a\u57fa\u7840\uff0c\u8ffd\u52a0\u5bf9\u65b9\u65b0\u589e\u7684\u9898\u76ee
+        var merged = bankData.questions.slice();
+        var addedCount = 0;
+        remoteBankData.questions.forEach(function(q) {
+            if (!localMap[q.id]) {
+                merged.push(q);
+                addedCount++;
+            }
+        });
+
+        bankData.questions = merged;
+        // \u5408\u5e76 settings\uff1a\u4f18\u5148\u672c\u5730
+        remoteBankSha = remoteSha;
+        hasUnsavedChanges = true;
+        renderQuestionList();
+        initDragDrop();
+        updateSettingsUI();
+        updateSyncWarningUI();
+        showToast('\u5df2\u5408\u5e76\uff08\u5171 ' + merged.length + ' \u9898\uff0c\u65b0\u589e ' + addedCount + ' \u9898\uff09\uff0c\u8bf7\u68c0\u67e5\u540e\u540c\u6b65', 'success');
     }
 
     // ===== Drag & Drop =====

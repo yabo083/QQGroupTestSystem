@@ -76,6 +76,14 @@ export default {
           }
         }
 
+        // 防删库：校验题目数量（客户端必须附带 questionCount）
+        const minQ = parseInt(env.MIN_QUESTIONS) || 5;
+        if (typeof body.questionCount !== 'number' || body.questionCount < minQ) {
+          return jsonResponse({
+            error: '题目数量不足：至少需要 ' + minQ + ' 道题才能同步（当前 ' + (body.questionCount || 0) + ' 道）'
+          }, 400, cors);
+        }
+
         // 写入前先验证仓库可达
         const access = await githubCheckAccess(env);
         if (!access.ok) {
@@ -83,6 +91,9 @@ export default {
         }
 
         const result = await githubPutFiles(env, body.files, body.message || '更新考试数据');
+        if (result.conflict) {
+          return jsonResponse(result, 409, cors);
+        }
         return jsonResponse(result, 200, cors);
       }
 
@@ -170,12 +181,20 @@ async function githubCheckAccess(env) {
   };
 }
 
-/** 批量写入文件到 GitHub 仓库（逐个提交） */
+/** 批量写入文件到 GitHub 仓库（逐个提交，支持乐观锁） */
 async function githubPutFiles(env, files, message) {
   const results = [];
   for (const file of files) {
-    // 先获取现有文件的 sha（更新需要）
-    const existing = await githubGetFile(env, file.path);
+    // 乐观锁：如果客户端提供了 sha，直接使用（冲突检测）
+    // 否则获取最新 sha（无锁模式）
+    let fileSha = file.sha || null;
+    if (!fileSha) {
+      const existing = await githubGetFile(env, file.path);
+      if (existing.exists) {
+        fileSha = existing.sha;
+      }
+    }
+
     const apiUrl = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/${file.path}`;
 
     const body = {
@@ -183,8 +202,8 @@ async function githubPutFiles(env, files, message) {
       content: btoa(unescape(encodeURIComponent(file.content))),
     };
 
-    if (existing.exists) {
-      body.sha = existing.sha;
+    if (fileSha) {
+      body.sha = fileSha;
     }
 
     const resp = await fetch(apiUrl, {
@@ -197,6 +216,17 @@ async function githubPutFiles(env, files, message) {
       },
       body: JSON.stringify(body)
     });
+
+    // 409 = SHA 不匹配，文件已被他人修改（乐观锁冲突）
+    if (resp.status === 409) {
+      const current = await githubGetFile(env, file.path);
+      return {
+        conflict: true,
+        file: file.path,
+        currentSha: current.sha,
+        currentContent: current.content
+      };
+    }
 
     if (!resp.ok) {
       const text = await resp.text();

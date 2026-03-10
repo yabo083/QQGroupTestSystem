@@ -50,27 +50,40 @@ const GitHubSync = (() => {
         return resp.json();
     }
 
-    /** 写入文件到仓库（支持多文件） */
-    async function writeFiles(files, message) {
+    /** 写入文件到仓库（支持多文件，支持乐观锁 SHA） */
+    async function writeFiles(files, message, questionCount) {
         const config = getConfig();
         if (!config) throw new Error('未配置同步');
 
         const url = config.workerUrl + '/api/write';
+        const payload = { files, message };
+        if (typeof questionCount === 'number') {
+            payload.questionCount = questionCount;
+        }
         const resp = await fetch(url, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Admin-Secret': config.adminSecret
             },
-            body: JSON.stringify({ files, message })
+            body: JSON.stringify(payload)
         });
 
+        const data = await resp.json().catch(() => ({}));
+
+        // 409 = 乐观锁冲突：文件已被他人修改
+        if (resp.status === 409 && data.conflict) {
+            const err = new Error('CONFLICT');
+            err.conflict = true;
+            err.conflictData = data;
+            throw err;
+        }
+
         if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
             throw new Error(data.error || 'Worker 请求失败 (' + resp.status + ')');
         }
 
-        return resp.json();
+        return data;
     }
 
     /** 测试连接（使用诊断接口） */
