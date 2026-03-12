@@ -23,6 +23,20 @@ const ExamApp = (() => {
         $('player-id-input').addEventListener('keydown', e => {
             if (e.key === 'Enter') startExam();
         });
+        loadExamInfo();
+    }
+
+    async function loadExamInfo() {
+        try {
+            const data = await loadExamData();
+            var count = (data.settings && data.settings.questionsPerExam) || ExamConfig.QUESTIONS_PER_EXAM;
+            if (count <= 0) count = data.questions.length;
+            count = Math.min(count, data.questions.length);
+            var el = $('info-question-count');
+            if (el) el.textContent = '📝 共 ' + count + ' 道选择题';
+        } catch (e) {
+            // 加载失败时保持默认显示
+        }
     }
 
     async function loadExamData() {
