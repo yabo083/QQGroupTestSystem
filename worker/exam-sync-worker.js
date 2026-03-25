@@ -11,7 +11,7 @@
  */
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Secret',
   'Access-Control-Max-Age': '86400',
 };
@@ -38,14 +38,16 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    // 验证管理员密钥
-    const secret = request.headers.get('X-Admin-Secret');
-    if (!secret || secret !== env.ADMIN_SECRET) {
-      return jsonResponse({ error: '未授权' }, 403, cors);
-    }
-
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // /api/notify 是公开端点，无需管理员密钥
+    if (path !== '/api/notify') {
+      const secret = request.headers.get('X-Admin-Secret');
+      if (!secret || secret !== env.ADMIN_SECRET) {
+        return jsonResponse({ error: '未授权' }, 403, cors);
+      }
+    }
 
     try {
       // GET /api/check  — 诊断连接（验证 token + 仓库可访问性）
@@ -95,6 +97,89 @@ export default {
           return jsonResponse(result, 409, cors);
         }
         return jsonResponse(result, 200, cors);
+      }
+
+      // POST /api/notify — 考试结果通知（无需 ADMIN_SECRET，考生端调用）
+      if (request.method === 'POST' && path === '/api/notify') {
+        // 未配置通知时静默成功，不暴露配置状态
+        if (!env.NAPCAT_URL || !env.NOTIFY_TARGETS) {
+          return jsonResponse({ ok: true }, 200, cors);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return jsonResponse({ error: '请求体格式错误' }, 400, cors);
+        }
+
+        const { playerID, passed, score, correct, total, credential, timestamp } = body;
+
+        // 输入校验，防止注入
+        if (typeof playerID !== 'string' || !/^[A-Za-z0-9_]{3,16}$/.test(playerID)) {
+          return jsonResponse({ error: '参数无效' }, 400, cors);
+        }
+        if (typeof passed !== 'boolean') {
+          return jsonResponse({ error: '参数无效' }, 400, cors);
+        }
+
+        let targets;
+        try {
+          targets = JSON.parse(env.NOTIFY_TARGETS);
+          if (!Array.isArray(targets)) throw new Error();
+        } catch {
+          return jsonResponse({ error: 'NOTIFY_TARGETS 配置格式错误' }, 500, cors);
+        }
+
+        // 构建消息内容
+        const ts = typeof timestamp === 'number' ? timestamp : Date.now();
+        const timeStr = new Date(ts).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        const status = passed ? '✅ 通过' : '❌ 未通过';
+
+        let content = '【入群考试通知】\n'
+          + '玩家：' + playerID + '\n'
+          + '结果：' + status + '\n'
+          + '得分：' + (score || 0) + ' 分（' + (correct || 0) + '/' + (total || 0) + ' 题正确）\n'
+          + '时间：' + timeStr;
+
+        if (passed && credential) {
+          content += '\n凭证码：' + credential;
+        }
+
+        // 逐个目标发送，失败不中止
+        const errors = [];
+        const napHeaders = {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + env.NAPCAT_TOKEN,
+          'User-Agent': 'ExamSync-Worker'
+        };
+
+        for (const target of targets) {
+          if (!target || typeof target.id !== 'number') continue;
+          const mode = target.mode || 'all';
+          if (mode === 'pass_only' && !passed) continue;
+          if (mode === 'fail_only' && passed) continue;
+
+          const endpoint = target.type === 'group' ? '/send_group_msg' : '/send_private_msg';
+          const idKey = target.type === 'group' ? 'group_id' : 'user_id';
+          const napBody = { [idKey]: target.id, message: content };
+
+          try {
+            const napResp = await fetch(env.NAPCAT_URL + endpoint, {
+              method: 'POST',
+              headers: napHeaders,
+              body: JSON.stringify(napBody)
+            });
+            const napData = await napResp.json().catch(() => ({}));
+            if (!napResp.ok || napData.status === 'failed') {
+              errors.push(String(target.id) + ': ' + (napData.message || 'HTTP ' + napResp.status));
+            }
+          } catch (e) {
+            errors.push(String(target.id) + ': ' + e.message);
+          }
+        }
+
+        return jsonResponse({ ok: true, errors: errors.length > 0 ? errors : undefined }, 200, cors);
       }
 
       return jsonResponse({ error: '未知路由' }, 404, cors);

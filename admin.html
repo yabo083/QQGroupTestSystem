@@ -78,6 +78,11 @@
                         <input type="number" id="settings-questions-per-exam" min="0" max="100" value="15" class="input-sm">
                         <span id="settings-questions-hint" class="settings-hint">输入 0 表示答全部题目</span>
                     </div>
+                    <div class="settings-row" style="margin-top:10px">
+                        <label for="settings-notify-url">通知 Worker 地址：</label>
+                        <input type="url" id="settings-notify-url" placeholder="https://exam-sync.your-subdomain.workers.dev" style="flex:1;min-width:0">
+                        <span class="settings-hint">考生提交后自动发 QQ 通知。留空禁用</span>
+                    </div>
                 </div>
 
                 <div class="panel-header">

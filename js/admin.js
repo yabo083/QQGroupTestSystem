@@ -101,6 +101,11 @@ const AdminApp = (() => {
             settingsInput.addEventListener('change', handleSettingsChange);
             settingsInput.addEventListener('blur', handleSettingsChange);
         }
+        var notifyUrlInput = $('settings-notify-url');
+        if (notifyUrlInput) {
+            notifyUrlInput.addEventListener('change', handleNotifyUrlChange);
+            notifyUrlInput.addEventListener('blur', handleNotifyUrlChange);
+        }
 
         // Quick sync button
         var quickSyncBtn = $('quick-sync-btn');
@@ -642,6 +647,10 @@ const AdminApp = (() => {
                 hint.textContent = '当前设置：从 ' + bankData.questions.length + ' 题中随机抽 ' + val + ' 题';
             }
         }
+        var notifyInput = $('settings-notify-url');
+        if (notifyInput) {
+            notifyInput.value = (bankData.settings && bankData.settings.notifyWorkerUrl) || '';
+        }
     }
 
     function handleSettingsChange() {
@@ -658,6 +667,24 @@ const AdminApp = (() => {
         updateSyncWarningUI();
         scheduleDraftSave();
         showToast('答题数量已更新，请同步以生效', 'success');
+    }
+
+    function handleNotifyUrlChange() {
+        var input = $('settings-notify-url');
+        if (!input || !bankData) return;
+        var val = input.value.trim().replace(/\/+$/, '');
+        if (val) {
+            try { new URL(val); } catch {
+                showToast('通知 Worker 地址格式不正确', 'error');
+                return;
+            }
+        }
+        if (!bankData.settings) bankData.settings = {};
+        bankData.settings.notifyWorkerUrl = val || null;
+        hasUnsavedChanges = true;
+        updateSyncWarningUI();
+        scheduleDraftSave();
+        showToast('通知地址已更新，请同步以生效', 'success');
     }
 
     // ===== Sync Warning & Quick Sync =====

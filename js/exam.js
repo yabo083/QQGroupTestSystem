@@ -243,11 +243,40 @@ const ExamApp = (() => {
                 $('credential-section').style.display = 'none';
                 $('fail-section').style.display = 'block';
             }
+
+            // 异步通知（静默失败，不影响考试流程）
+            _notifyResult(
+                playerID,
+                passed,
+                score,
+                correct,
+                total,
+                passed && _credential ? _credential.code : null,
+                Date.now()
+            );
         } catch (e) {
             showToast('评分出错: ' + e.message, 'error');
         } finally {
             showLoading(false);
         }
+    }
+
+    function _notifyResult(pid, passed, score, correct, total, credential, timestamp) {
+        if (!examData || !examData.settings || !examData.settings.notifyWorkerUrl) return;
+        var workerUrl = examData.settings.notifyWorkerUrl;
+        fetch(workerUrl + '/api/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playerID: pid,
+                passed: passed,
+                score: score,
+                correct: correct,
+                total: total,
+                credential: credential,
+                timestamp: timestamp
+            })
+        }).catch(function() { /* 静默失败 */ });
     }
 
     function copyCredential() {
