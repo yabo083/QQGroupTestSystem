@@ -48,12 +48,16 @@
 ### 3.2 敏感信息存放
 - 仅 Worker 环境变量保存以下敏感配置：
   - `GITHUB_TOKEN` / `GITHUB_OWNER` / `GITHUB_REPO` / `ADMIN_SECRET`
-  - `NAPCAT_URL` / `NAPCAT_TOKEN` / `NOTIFY_TARGETS`
+  - `NAPCAT_URL` / `NAPCAT_TOKEN` / `NOTIFY_TARGETS` / `NAPCAT_CUSTOM_AUTH`
 - 浏览器端只拿到 `notifyWorkerUrl`（Worker 公网地址），不拿到 NapCat Token
 
 ### 3.3 鉴权策略
 - `/api/check`、`/api/read`、`/api/write`：必须校验 `X-Admin-Secret`
 - `/api/notify`：公开端点，不要求 `ADMIN_SECRET`，但做请求体与 `playerID` 格式校验
+- Worker -> NapCat Tunnel 出站请求必须满足：
+  - `NAPCAT_URL` 的 Hostname 固定为 `napcat.miyakko.de`
+  - `User-Agent` 包含 `Cloudflare-Workers`
+  - 必须携带 `x-custom-auth`，其值来自 `NAPCAT_CUSTOM_AUTH`
 
 ## 4. 业务主链路
 
@@ -77,7 +81,7 @@
 - `GET /api/check`：检查 GitHub 访问与写权限（管理员）
 - `GET /api/read?file=data/*.enc`：读取允许范围内加密文件（管理员）
 - `PUT /api/write`：批量写入加密文件，含题目数保护与冲突处理（管理员）
-- `POST /api/notify`：接收考试结果并转发到 NapCat（公开）
+- `POST /api/notify`：接收考试结果并转发到 NapCat（公开；转发时执行 Tunnel/WAF 头部约束）
 
 ## 6. 运维与发布要点
 
@@ -85,5 +89,7 @@
   - `NAPCAT_URL`
   - `NAPCAT_TOKEN`
   - `NOTIFY_TARGETS`（JSON 数组字符串）
+  - `NAPCAT_CUSTOM_AUTH`（用于 `x-custom-auth`）
+- `NAPCAT_URL` 必须指向 `https://napcat.miyakko.de`（或该主机下的路径），以匹配 Cloudflare WAF 策略
 - 管理员在面板中填写“通知 Worker 地址”后，必须执行“加密并发布”，使配置进入 `exam.enc`
 - 通知模块设计为“fire-and-forget”：任何通知失败均不影响考试评分与结果展示

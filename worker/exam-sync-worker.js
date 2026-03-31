@@ -8,7 +8,11 @@
  *   GITHUB_OWNER   - GitHub 用户名（如 yabo083）
  *   GITHUB_REPO    - 仓库名（如 QQGroupTestSystem）
  *   ADMIN_SECRET   - 管理员通信密钥（随机字符串，防止任何人调用 Worker）
+ *   NAPCAT_CUSTOM_AUTH - NapCat WAF 自定义鉴权密钥（对应 x-custom-auth）
  */
+
+const REQUIRED_NAPCAT_HOSTNAME = 'napcat.miyakko.de';
+const REQUIRED_NAPCAT_UA_KEYWORD = 'Cloudflare-Workers';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
@@ -105,6 +109,10 @@ export default {
         if (!env.NAPCAT_URL || !env.NOTIFY_TARGETS) {
           return jsonResponse({ ok: true }, 200, cors);
         }
+        const napcatConfig = getNapcatConfig(env);
+        if (!napcatConfig.ok) {
+          return jsonResponse({ error: napcatConfig.error }, 500, cors);
+        }
 
         let body;
         try {
@@ -148,11 +156,6 @@ export default {
 
         // 逐个目标发送，失败不中止
         const errors = [];
-        const napHeaders = {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + env.NAPCAT_TOKEN,
-          'User-Agent': 'ExamSync-Worker'
-        };
 
         for (const target of targets) {
           if (!target || typeof target.id !== 'number') continue;
@@ -165,9 +168,9 @@ export default {
           const napBody = { [idKey]: target.id, message: content };
 
           try {
-            const napResp = await fetch(env.NAPCAT_URL + endpoint, {
+            const napResp = await fetch(buildNapcatApiUrl(env.NAPCAT_URL, endpoint), {
               method: 'POST',
-              headers: napHeaders,
+              headers: napcatConfig.headers,
               body: JSON.stringify(napBody)
             });
             const napData = await napResp.json().catch(() => ({}));
@@ -189,6 +192,39 @@ export default {
     }
   }
 };
+
+function getNapcatConfig(env) {
+  if (!env.NAPCAT_TOKEN) {
+    return { ok: false, error: '未配置 NAPCAT_TOKEN' };
+  }
+  if (!env.NAPCAT_CUSTOM_AUTH) {
+    return { ok: false, error: '未配置 NAPCAT_CUSTOM_AUTH' };
+  }
+
+  let napcatUrl;
+  try {
+    napcatUrl = new URL(env.NAPCAT_URL);
+  } catch {
+    return { ok: false, error: 'NAPCAT_URL 格式错误' };
+  }
+  if (napcatUrl.hostname !== REQUIRED_NAPCAT_HOSTNAME) {
+    return { ok: false, error: 'NAPCAT_URL Hostname 必须为 ' + REQUIRED_NAPCAT_HOSTNAME };
+  }
+
+  return {
+    ok: true,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + env.NAPCAT_TOKEN,
+      'User-Agent': REQUIRED_NAPCAT_UA_KEYWORD + ' ExamSync-Worker',
+      'x-custom-auth': env.NAPCAT_CUSTOM_AUTH
+    }
+  };
+}
+
+function buildNapcatApiUrl(base, endpoint) {
+  return base.replace(/\/+$/, '') + endpoint;
+}
 
 /** 只允许 data 目录下的 .enc 文件 */
 function isAllowedPath(filePath) {
