@@ -73,10 +73,14 @@
 
                 <!-- Settings Section -->
                 <div class="settings-section">
-                    <div class="settings-row">
-                        <label for="settings-questions-per-exam">每次答题数量：</label>
-                        <input type="number" id="settings-questions-per-exam" min="0" max="100" value="15" class="input-sm">
-                        <span id="settings-questions-hint" class="settings-hint">输入 0 表示答全部题目</span>
+                    <div class="settings-row settings-row-main">
+                        <label for="settings-questions-mode">考试抽题：</label>
+                        <select id="settings-questions-mode" class="input-select-sm">
+                            <option value="all">全部题目</option>
+                            <option value="custom">自定义数量</option>
+                        </select>
+                        <input type="number" id="settings-questions-per-exam" min="1" max="999" value="15" class="input-sm" style="display:none">
+                        <span id="settings-questions-hint" class="settings-hint">当前设置：答全部题目</span>
                     </div>
                     <div class="settings-row" style="margin-top:10px">
                         <label for="settings-notify-url">通知 Worker 地址：</label>
@@ -137,6 +141,7 @@
                     <h2>☁️ 云端同步配置</h2>
                     <p>配置 Cloudflare Worker 代理后，导出操作将直接推送到 GitHub 仓库，无需手动下载和 git push。</p>
                     <div id="sync-current-info" class="sync-info"></div>
+                    <div id="sync-test-result" class="sync-result" style="display:none"></div>
                     <div class="form-group">
                         <label for="sync-worker-url">Worker 地址</label>
                         <input type="url" id="sync-worker-url" placeholder="https://exam-sync.your-subdomain.workers.dev">
@@ -214,6 +219,7 @@
     <script src="js/crypto.js"></script>
     <script src="js/config.js"></script>
     <script src="js/github-sync.js"></script>
+    <script src="js/bank-model.js"></script>
     <script src="js/admin.js"></script>
 </body>
 </html>

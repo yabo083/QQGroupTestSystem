@@ -101,6 +101,10 @@ const AdminApp = (() => {
             settingsInput.addEventListener('change', handleSettingsChange);
             settingsInput.addEventListener('blur', handleSettingsChange);
         }
+        var settingsMode = $('settings-questions-mode');
+        if (settingsMode) {
+            settingsMode.addEventListener('change', handleSettingsModeChange);
+        }
         var notifyUrlInput = $('settings-notify-url');
         if (notifyUrlInput) {
             notifyUrlInput.addEventListener('change', handleNotifyUrlChange);
@@ -145,10 +149,7 @@ const AdminApp = (() => {
 
             const decrypted = await CryptoUtil.decrypt(encrypted.trim(), password);
             bankData = JSON.parse(decrypted);
-            // 向后兼容：老数据没有 settings
-            if (!bankData.settings) {
-                bankData.settings = { questionsPerExam: 15 };
-            }
+            BankModel.ensureSettings(bankData);
             adminPassword = password;
             hasUnsavedChanges = false;
             showScreen('dashboard');
@@ -185,7 +186,7 @@ const AdminApp = (() => {
             credentialSecret: CryptoUtil.generateRandomHex(32),
             salt: CryptoUtil.generateRandomHex(16),
             settings: {
-                questionsPerExam: 15  // 默认15题，0表示全部
+                questionsPerExam: 0
             },
             questions: []
         };
@@ -303,6 +304,7 @@ const AdminApp = (() => {
                 bankData.questions[idx].category = category;
             }
         } else {
+            var previousCount = bankData.questions.length;
             var id = 'q' + String(Date.now()).slice(-8) + String(Math.random()).slice(2, 5);
             bankData.questions.push({
                 id: id,
@@ -311,6 +313,7 @@ const AdminApp = (() => {
                 correctIndex: correctIndex,
                 category: category
             });
+            BankModel.afterQuestionCountChanged(bankData, previousCount);
         }
 
         hasUnsavedChanges = true;
@@ -333,7 +336,9 @@ const AdminApp = (() => {
         } else {
             if (!confirm('确定要删除这道题目吗？')) return;
         }
+        var previousCount = bankData.questions.length;
         bankData.questions = bankData.questions.filter(function(q) { return q.id !== id; });
+        BankModel.afterQuestionCountChanged(bankData, previousCount);
         hasUnsavedChanges = true;
         renderQuestionList();
         initDragDrop();
@@ -388,34 +393,7 @@ const AdminApp = (() => {
         var reader = new FileReader();
         reader.onload = function(event) {
             try {
-                var questions = JSON.parse(event.target.result);
-                if (!Array.isArray(questions)) throw new Error('JSON 格式应为数组');
-
-                questions.forEach(function(q, i) {
-                    if (!q.stem || typeof q.stem !== 'string') {
-                        throw new Error('第 ' + (i + 1) + ' 题缺少题干或格式错误');
-                    }
-                    if (!Array.isArray(q.options) || q.options.length !== 4) {
-                        throw new Error('第 ' + (i + 1) + ' 题必须有 4 个选项');
-                    }
-                    if (q.options.some(function(o) { return typeof o !== 'string' || !o.trim(); })) {
-                        throw new Error('第 ' + (i + 1) + ' 题选项不能为空或非字符串');
-                    }
-                    if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) {
-                        throw new Error('第 ' + (i + 1) + ' 题 correctIndex 应为 0-3 的数字');
-                    }
-                    if (q.stem.length > 500) throw new Error('第 ' + (i + 1) + ' 题题干过长（最多500字）');
-                    if (q.options.some(function(o) { return o.length > 200; })) {
-                        throw new Error('第 ' + (i + 1) + ' 题选项过长（最多200字）');
-                    }
-                    // 清洗字段：只保留必要属性
-                    q.stem = q.stem.trim();
-                    q.options = q.options.map(function(o) { return o.trim(); });
-                    q.correctIndex = Math.floor(q.correctIndex);
-                    if (!q.id || typeof q.id !== 'string') q.id = 'q' + String(Date.now()).slice(-6) + String(i).padStart(3, '0');
-                    q.id = q.id.trim().substring(0, 50);
-                    q.category = (typeof q.category === 'string' && q.category.trim()) ? q.category.trim().substring(0, 30) : '未分类';
-                });
+                var questions = BankModel.normalizeQuestions(JSON.parse(event.target.result));
 
                 var action = 'replace';
                 if (bankData.questions.length > 0) {
@@ -423,11 +401,13 @@ const AdminApp = (() => {
                         ? 'append' : 'replace';
                 }
 
+                var previousCount = bankData.questions.length;
                 if (action === 'replace') {
                     bankData.questions = questions;
                 } else {
                     bankData.questions = bankData.questions.concat(questions);
                 }
+                BankModel.afterQuestionCountChanged(bankData, previousCount);
 
                 hasUnsavedChanges = true;
                 renderQuestionList();
@@ -450,26 +430,8 @@ const AdminApp = (() => {
 
         showLoading(true);
         try {
-            // Generate exam data with answer hashes
-            var examQuestions = [];
-            for (var i = 0; i < bankData.questions.length; i++) {
-                var q = bankData.questions[i];
-                var answerHash = await CryptoUtil.hashAnswer(bankData.salt, q.id, q.correctIndex);
-                examQuestions.push({
-                    id: q.id,
-                    stem: q.stem,
-                    options: q.options,
-                    category: q.category,
-                    answerHash: answerHash
-                });
-            }
-
-            var examData = {
-                version: bankData.version,
-                salt: bankData.salt,
-                settings: bankData.settings || { questionsPerExam: 15 },
-                questions: examQuestions
-            };
+            BankModel.ensureSettings(bankData);
+            var examData = await BankModel.buildExamData(bankData, CryptoUtil.hashAnswer);
 
             // Encrypt
             var examEncrypted = await CryptoUtil.encrypt(JSON.stringify(examData), ExamConfig.getSiteKey());
@@ -571,50 +533,72 @@ const AdminApp = (() => {
 
         if (GitHubSync.isConfigured()) {
             var cfg = GitHubSync.getConfig();
-            badge.textContent = '已配置';
-            badge.className = 'sync-badge connected';
-            info.innerHTML = '<p>✅ Worker 地址: <code>' + escapeHtml(cfg.workerUrl) + '</code></p>';
+            var verified = GitHubSync.isVerified();
+            badge.textContent = verified ? '已验证' : '待验证';
+            badge.className = 'sync-badge ' + (verified ? 'connected' : 'pending');
+            info.innerHTML = '<p>' + (verified ? '✅' : '⚠️') + ' Worker 地址: <code>' + escapeHtml(cfg.workerUrl) + '</code></p>' +
+                (cfg.repo ? '<p>仓库: <code>' + escapeHtml(cfg.repo) + '</code>' + (cfg.canPush ? '，有写入权限' : '，无写入权限') + '</p>' : '') +
+                '<p class="sync-help">保存配置会先测试连接，测试按钮会测试当前输入框内容。</p>';
             $('sync-worker-url').value = cfg.workerUrl;
             $('sync-admin-secret').value = cfg.adminSecret;
         } else {
             badge.textContent = '未配置';
             badge.className = 'sync-badge disconnected';
-            info.innerHTML = '<p>未配置云端同步，导出时将下载本地文件</p>';
+            info.innerHTML = '<p>未配置云端同步，导出时将下载本地文件</p><p class="sync-help">Worker 地址已预填，输入通信密钥后点击保存配置即可。</p>';
+            $('sync-worker-url').value = ExamConfig.SYNC_WORKER_URL || '';
+            $('sync-admin-secret').value = '';
         }
     }
 
-    function handleSyncSave() {
-        var workerUrl = $('sync-worker-url').value.trim();
-        var adminSecret = $('sync-admin-secret').value.trim();
+    function getSyncFormValues() {
+        return GitHubSync.normalizeConfig($('sync-worker-url').value, $('sync-admin-secret').value);
+    }
 
-        if (!workerUrl) { showToast('请输入 Worker 地址', 'error'); return; }
-        if (!adminSecret) { showToast('请输入管理员通信密钥', 'error'); return; }
+    function showSyncResult(type, title, detail) {
+        var box = $('sync-test-result');
+        if (!box) return;
+        box.style.display = 'block';
+        box.className = 'sync-result ' + type;
+        box.innerHTML = '<strong>' + escapeHtml(title) + '</strong>' + (detail ? '<p>' + escapeHtml(detail) + '</p>' : '');
+    }
 
-        // 基本URL格式校验
-        try { new URL(workerUrl); } catch {
-            showToast('Worker 地址格式不正确', 'error'); return;
+    async function handleSyncSave() {
+        showLoading(true);
+        try {
+            var form = getSyncFormValues();
+            var result = await GitHubSync.testConnectionWith(form.workerUrl, form.adminSecret);
+            if (!result.canPush) {
+                showSyncResult('error', '连接成功，但没有写入权限', result.message || '请检查 GitHub PAT 的 Contents 写权限');
+                showToast('连接成功但无写入权限', 'error');
+                return;
+            }
+            GitHubSync.saveConfig(form.workerUrl, form.adminSecret, result);
+            updateSyncStatusUI();
+            showSyncResult('success', '配置已保存并验证', '仓库：' + result.repo + '，有写入权限');
+            showToast('同步配置已保存并验证', 'success');
+        } catch (e) {
+            showSyncResult('error', '连接失败，配置未保存', e.message);
+            showToast('连接失败: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
         }
-
-        GitHubSync.saveConfig(workerUrl, adminSecret);
-        updateSyncStatusUI();
-        showToast('同步配置已保存', 'success');
     }
 
     async function handleSyncTest() {
-        if (!GitHubSync.isConfigured()) {
-            showToast('请先保存配置', 'error');
-            return;
-        }
         showLoading(true);
         try {
-            var result = await GitHubSync.testConnection();
+            var form = getSyncFormValues();
+            var result = await GitHubSync.testConnectionWith(form.workerUrl, form.adminSecret);
             var msg = '连接成功！仓库: ' + result.repo;
             if (!result.canPush) {
+                showSyncResult('error', '连接成功，但没有写入权限', result.message || '请检查 GitHub PAT 权限');
                 showToast(msg + '（⚠️ 无写入权限，请检查 PAT）', 'error');
             } else {
+                showSyncResult('success', '连接成功', '仓库：' + result.repo + '，有写入权限。点击保存配置后生效');
                 showToast(msg + '（有写入权限 ✓）', 'success');
             }
         } catch (e) {
+            showSyncResult('error', '连接失败', e.message);
             showToast('连接失败: ' + e.message, 'error');
         } finally {
             showLoading(false);
@@ -625,8 +609,10 @@ const AdminApp = (() => {
         if (!confirm('确定清除同步配置？之后导出操作将回退到本地下载模式。')) return;
         GitHubSync.clearConfig();
         syncMode = false;
-        $('sync-worker-url').value = '';
+        $('sync-worker-url').value = ExamConfig.SYNC_WORKER_URL || '';
         $('sync-admin-secret').value = '';
+        var result = $('sync-test-result');
+        if (result) result.style.display = 'none';
         updateSyncStatusUI();
         showToast('同步配置已清除', 'success');
     }
@@ -635,16 +621,23 @@ const AdminApp = (() => {
 
     function updateSettingsUI() {
         var input = $('settings-questions-per-exam');
+        var mode = $('settings-questions-mode');
         if (!input || !bankData) return;
-        var val = (bankData.settings && bankData.settings.questionsPerExam) || 15;
-        input.value = val;
+        BankModel.ensureSettings(bankData);
+        var count = bankData.questions.length;
+        var val = BankModel.getQuestionsPerExam(bankData);
+        var isAll = val >= count;
+        input.value = isAll ? count : val;
+        input.max = Math.max(count, 1);
+        input.style.display = isAll ? 'none' : '';
+        if (mode) mode.value = isAll ? 'all' : 'custom';
         // 更新提示
         var hint = $('settings-questions-hint');
         if (hint) {
-            if (val <= 0 || val >= bankData.questions.length) {
-                hint.textContent = '当前设置：答全部 ' + bankData.questions.length + ' 题';
+            if (isAll) {
+                hint.textContent = '当前设置：答全部 ' + count + ' 题。新增题目后会自动纳入考试';
             } else {
-                hint.textContent = '当前设置：从 ' + bankData.questions.length + ' 题中随机抽 ' + val + ' 题';
+                hint.textContent = '当前设置：从 ' + count + ' 题中随机抽 ' + val + ' 题';
             }
         }
         var notifyInput = $('settings-notify-url');
@@ -656,12 +649,24 @@ const AdminApp = (() => {
     function handleSettingsChange() {
         var input = $('settings-questions-per-exam');
         if (!input || !bankData) return;
-        var val = parseInt(input.value) || 0;
-        if (val < 0) val = 0;
-        if (val > 999) val = 999;
+        var val = BankModel.setQuestionsPerExam(bankData, input.value);
         input.value = val;
-        if (!bankData.settings) bankData.settings = {};
-        bankData.settings.questionsPerExam = val;
+        hasUnsavedChanges = true;
+        updateSettingsUI();
+        updateSyncWarningUI();
+        scheduleDraftSave();
+        showToast('答题数量已更新，请同步以生效', 'success');
+    }
+
+    function handleSettingsModeChange() {
+        var mode = $('settings-questions-mode');
+        var input = $('settings-questions-per-exam');
+        if (!mode || !input || !bankData) return;
+        if (mode.value === 'all') {
+            BankModel.setQuestionsPerExam(bankData, bankData.questions.length);
+        } else {
+            BankModel.setQuestionsPerExam(bankData, Math.min(15, bankData.questions.length));
+        }
         hasUnsavedChanges = true;
         updateSettingsUI();
         updateSyncWarningUI();
@@ -679,7 +684,7 @@ const AdminApp = (() => {
                 return;
             }
         }
-        if (!bankData.settings) bankData.settings = {};
+        BankModel.ensureSettings(bankData);
         bankData.settings.notifyWorkerUrl = val || null;
         hasUnsavedChanges = true;
         updateSyncWarningUI();
@@ -902,7 +907,7 @@ const AdminApp = (() => {
 
     function loadRemoteVersion(remoteBankData, remoteSha) {
         bankData = remoteBankData;
-        if (!bankData.settings) bankData.settings = { questionsPerExam: 15 };
+        BankModel.ensureSettings(bankData);
         remoteBankSha = remoteSha;
         hasUnsavedChanges = false;
         clearDraft();

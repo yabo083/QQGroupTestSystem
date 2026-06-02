@@ -22,9 +22,15 @@
   - 维护 `bankData.settings`（含抽题数量与通知 Worker 地址）
   - 导出时将 `bankData.settings` 复制到 `examData.settings`，发布到 `data/exam.enc`
 
+- `js/bank-model.js`
+  - 管理端题库数据模型，负责纯数据规则
+  - 统一处理题目清洗、抽题数量、题库变更后的设置修正、`examData` 派生
+  - 不访问 DOM、不访问网络，便于用 Node 脚本直接测试
+
 - `js/github-sync.js`
   - 管理端调用 Worker 的同步客户端封装
   - 使用 `X-Admin-Secret` 访问受保护路由
+  - 保存配置前会规范化 Worker URL 与通信密钥；测试连接可使用当前表单值，避免误用旧 localStorage 配置
 
 - `worker/exam-sync-worker.js`
   - GitHub 读写代理（`/api/check`、`/api/read`、`/api/write`）
@@ -67,6 +73,12 @@
 3. 若已配置 Worker，同步写入 GitHub `data/exam.enc` 与 `data/bank.enc`
 4. GitHub Pages 自动部署后，考生端读取新版本 `exam.enc`
 
+### 4.1.1 抽题数量策略
+- 管理端默认使用“全部题目”模式，即 `questionsPerExam === questions.length`
+- 新增、删除、替换或追加导入题目后，如果原先是“全部题目”，`js/bank-model.js` 会自动同步抽题数量
+- 自定义抽题数量只在管理员明确切换到“自定义数量”时保留
+- 发布前可运行 `tools/verify-release-data.mjs` 检查 `bank.enc` 与 `exam.enc` 是否一致
+
 ### 4.2 考试通知链路（新增）
 1. 考生提交后，`js/exam.js` 调用 `_notifyResult(...)`
 2. 前端向 `notifyWorkerUrl + /api/notify` 发送考试结果（异步、静默失败）
@@ -93,3 +105,16 @@
 - `NAPCAT_URL` 必须指向 `https://napcat.miyakko.de`（或该主机下的路径），以匹配 Cloudflare WAF 策略
 - 管理员在面板中填写“通知 Worker 地址”后，必须执行“加密并发布”，使配置进入 `exam.enc`
 - 通知模块设计为“fire-and-forget”：任何通知失败均不影响考试评分与结果展示
+
+## 7. 维护与校验脚本
+
+- `tools/test-bank-model.mjs`
+  - Node 零依赖测试，覆盖题库数量变化、抽题数量修正、题目导入清洗
+
+- `tools/test-github-sync.mjs`
+  - Node 零依赖测试，覆盖同步配置规范化、当前输入值测试连接、验证信息保存
+
+- `tools/verify-release-data.mjs`
+  - 发布前数据完整性检查
+  - 需要通过环境变量提供管理员密码：`ADMIN_PASSWORD=... node tools/verify-release-data.mjs`
+  - 检查项包括：加密格式、题库数量、抽题数量、题目 ID 顺序、答案哈希、`exam.enc` 不泄露 `correctIndex`

@@ -14,11 +14,26 @@ const GitHubSync = (() => {
         } catch { return null; }
     }
 
+    function normalizeConfig(workerUrl, adminSecret) {
+        workerUrl = (workerUrl || '').trim().replace(/\/+$/, '');
+        adminSecret = (adminSecret || '').trim();
+        if (!workerUrl) throw new Error('请输入 Worker 地址');
+        if (!adminSecret) throw new Error('请输入管理员通信密钥');
+        try { new URL(workerUrl); } catch {
+            throw new Error('Worker 地址格式不正确');
+        }
+        return { workerUrl, adminSecret };
+    }
+
     /** 保存同步配置 */
-    function saveConfig(workerUrl, adminSecret) {
-        // 标准化 URL，去尾斜杠
-        workerUrl = workerUrl.replace(/\/+$/, '');
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ workerUrl, adminSecret }));
+    function saveConfig(workerUrl, adminSecret, verification) {
+        const config = normalizeConfig(workerUrl, adminSecret);
+        if (verification) {
+            config.verifiedAt = Date.now();
+            config.repo = verification.repo || null;
+            config.canPush = !!verification.canPush;
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
 
     /** 清除同步配置 */
@@ -29,6 +44,11 @@ const GitHubSync = (() => {
     /** 是否已配置同步 */
     function isConfigured() {
         return getConfig() !== null;
+    }
+
+    function isVerified() {
+        const config = getConfig();
+        return !!(config && config.verifiedAt && config.canPush);
     }
 
     /** 从仓库读取文件 */
@@ -87,9 +107,8 @@ const GitHubSync = (() => {
     }
 
     /** 测试连接（使用诊断接口） */
-    async function testConnection() {
-        const config = getConfig();
-        if (!config) throw new Error('未配置同步');
+    async function testConnectionWith(workerUrl, adminSecret) {
+        const config = normalizeConfig(workerUrl, adminSecret);
 
         const url = config.workerUrl + '/api/check';
         const resp = await fetch(url, {
@@ -104,13 +123,23 @@ const GitHubSync = (() => {
         return { success: true, repo: data.repo, canPush: data.canPush, message: data.message };
     }
 
+    /** 测试已保存的连接 */
+    async function testConnection() {
+        const config = getConfig();
+        if (!config) throw new Error('未配置同步');
+        return testConnectionWith(config.workerUrl, config.adminSecret);
+    }
+
     return {
         getConfig,
+        normalizeConfig,
         saveConfig,
         clearConfig,
         isConfigured,
+        isVerified,
         readFile,
         writeFiles,
+        testConnectionWith,
         testConnection
     };
 })();

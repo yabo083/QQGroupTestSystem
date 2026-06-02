@@ -18,6 +18,7 @@ const ExamConfig = (() => {
         PASS_SCORE: 100,
         VERSION: 1,
         DATA_PATH: 'data/',
+        SYNC_WORKER_URL: 'https://exam-sync.sz7372797.workers.dev',
         getSiteKey: getSiteKey
     };
 })();
