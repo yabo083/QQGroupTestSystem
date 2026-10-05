@@ -93,6 +93,14 @@
                         <input type="url" id="settings-notify-url" placeholder="https://exam-sync.your-subdomain.workers.dev" style="flex:1;min-width:0">
                         <span class="settings-hint">考生提交后自动发 QQ 通知。留空禁用</span>
                     </div>
+                    <div class="settings-row" style="margin-top:10px">
+                        <label for="settings-announcement-enabled">考试公告：</label>
+                        <input type="checkbox" id="settings-announcement-enabled">
+                        <span class="settings-hint">开启后考生进入考试页会先弹出公告，需点击「我已知晓」才能开始</span>
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <textarea id="settings-announcement-text" rows="3" maxlength="500" placeholder="考试公告内容（支持换行）"></textarea>
+                    </div>
                 </div>
 
                 <div class="panel-header">

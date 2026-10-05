@@ -26,6 +26,8 @@ const ExamApp = (() => {
         $('retry-btn').addEventListener('click', () => location.reload());
         $('copy-credential-btn').addEventListener('click', copyCredential);
         $('download-cert-btn').addEventListener('click', downloadCertificate);
+        var announcementClose = $('announcement-close-btn');
+        if (announcementClose) announcementClose.addEventListener('click', hideAnnouncement);
         $('player-id-input').addEventListener('keydown', e => {
             if (e.key === 'Enter') startExam();
         });
@@ -40,9 +42,37 @@ const ExamApp = (() => {
             count = Math.min(count, data.questions.length);
             var el = $('info-question-count');
             if (el) el.innerHTML = ICON.listChecks + ' 共 ' + count + ' 道选择题';
+            showAnnouncement(data.settings);
         } catch (e) {
             // 加载失败时保持默认显示
         }
+    }
+
+    /**
+     * 考试公告：settings 缺字段时回退到 ExamConfig 默认值，因此老题库无需重新导出也会显示默认公告。
+     * 文本用 textContent 写入，避免公告内容被当作 HTML 解析。
+     */
+    function showAnnouncement(settings) {
+        var modal = $('announcement-modal');
+        var textEl = $('announcement-text');
+        // 旧 index.html 配新 exam.js（缓存混杂）时元素可能不存在，此处直接跳过而不是抛错
+        if (!modal || !textEl) return;
+        var s = settings || {};
+        var enabled = (typeof s.announcementEnabled === 'boolean')
+            ? s.announcementEnabled
+            : ExamConfig.ANNOUNCEMENT_ENABLED;
+        var text = (typeof s.announcementText === 'string')
+            ? s.announcementText
+            : ExamConfig.ANNOUNCEMENT_TEXT;
+        if (!enabled || !text.trim()) return;
+        textEl.textContent = text;
+        modal.classList.add('show');
+        $('announcement-close-btn').focus();
+    }
+
+    function hideAnnouncement() {
+        var modal = $('announcement-modal');
+        if (modal) modal.classList.remove('show');
     }
 
     async function loadExamData() {
@@ -54,6 +84,12 @@ const ExamApp = (() => {
     }
 
     async function startExam() {
+        // 公告未确认前不允许开始（遮挡层只挡指针，键盘仍可触发按钮）
+        var announcement = $('announcement-modal');
+        if (announcement && announcement.classList.contains('show')) {
+            showToast('请先阅读并确认考试公告', 'error');
+            return;
+        }
         playerID = $('player-id-input').value.trim();
         if (!playerID) {
             showToast('请输入你的 MC 正版 ID', 'error');

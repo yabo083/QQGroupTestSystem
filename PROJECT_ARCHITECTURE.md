@@ -14,12 +14,13 @@
 - `index.html` + `js/exam.js`
   - 考生答题入口
   - 解密并加载 `data/exam.enc`
+  - 加载后按 `examData.settings` 弹出考试公告模态框，需点击「我已知晓」后才能开始考试
   - 本地评分、通过时生成凭证码
   - 提交后异步调用通知接口（不阻塞主流程）
 
 - `admin.html` + `js/admin.js`
   - 管理员题库管理、导入导出、凭证验证
-  - 维护 `bankData.settings`（含抽题数量与通知 Worker 地址）
+  - 维护 `bankData.settings`（含抽题数量、通知 Worker 地址、考试公告开关与正文）
   - 导出时将 `bankData.settings` 复制到 `examData.settings`，发布到 `data/exam.enc`
 
 - `js/bank-model.js`
@@ -39,11 +40,11 @@
 
 - `data/exam.enc`
   - 考生可解密考试数据（不含明文答案）
-  - 包含 `examData.settings.notifyWorkerUrl`
+  - `examData.settings` 含考试公告（`announcementEnabled` / `announcementText`）与 `notifyWorkerUrl`
 
 - `data/bank.enc`
   - 管理员可解密完整题库（含正确答案索引）
-  - 包含 `bankData.settings.notifyWorkerUrl`
+  - `bankData.settings` 含考试公告、抽题数量与 `notifyWorkerUrl`
 
 ## 3. 核心数据与安全边界
 

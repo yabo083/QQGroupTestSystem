@@ -19,6 +19,9 @@ const ExamConfig = (() => {
         VERSION: 1,
         DATA_PATH: 'data/',
         SYNC_WORKER_URL: 'https://exam-sync.sz7372797.workers.dev',
+        // 考试公告：管理端可在「题库管理」页覆盖；考生端在 settings 缺字段时回退到这里的默认值
+        ANNOUNCEMENT_ENABLED: true,
+        ANNOUNCEMENT_TEXT: '禁止ai答题，如果用也可以不用玩了',
         getSiteKey: getSiteKey
     };
 })();

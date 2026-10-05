@@ -187,6 +187,7 @@ select:focus{
 
 ::placeholder{color:var(--text-muted)}
 textarea{resize:vertical;min-height:84px;line-height:1.55}
+input[type=checkbox]{width:16px;height:16px;flex:none;margin:0;accent-color:var(--primary);cursor:pointer}
 
 select{
   appearance:none;
@@ -431,6 +432,14 @@ select{
   animation:fadeIn .18s var(--ease);
 }
 .modal-content h2{margin-bottom:4px}
+
+/* 考试公告：正文保留换行，禁用任何 HTML 解析（JS 用 textContent 写入） */
+.announcement-modal-content h2{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.announcement-text{
+  font-size:14px;line-height:1.75;color:var(--text-2);
+  white-space:pre-wrap;word-break:break-word;
+  margin-bottom:20px;
+}
 
 .options-edit{margin-top:14px}
 .option-edit-row{display:flex;align-items:center;gap:10px;margin-top:10px}

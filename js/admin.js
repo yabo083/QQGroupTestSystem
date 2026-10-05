@@ -126,6 +126,14 @@ const AdminApp = (() => {
             notifyUrlInput.addEventListener('change', handleNotifyUrlChange);
             notifyUrlInput.addEventListener('blur', handleNotifyUrlChange);
         }
+        var announcementToggle = $('settings-announcement-enabled');
+        if (announcementToggle) {
+            announcementToggle.addEventListener('change', handleAnnouncementToggle);
+        }
+        var announcementText = $('settings-announcement-text');
+        if (announcementText) {
+            announcementText.addEventListener('change', handleAnnouncementTextChange);
+        }
 
         // Quick sync button
         var quickSyncBtn = $('quick-sync-btn');
@@ -660,6 +668,40 @@ const AdminApp = (() => {
         if (notifyInput) {
             notifyInput.value = (bankData.settings && bankData.settings.notifyWorkerUrl) || '';
         }
+        updateAnnouncementUI();
+    }
+
+    function updateAnnouncementUI() {
+        var toggle = $('settings-announcement-enabled');
+        var text = $('settings-announcement-text');
+        if (!toggle || !text || !bankData) return;
+        var settings = BankModel.ensureSettings(bankData);
+        toggle.checked = (typeof settings.announcementEnabled === 'boolean')
+            ? settings.announcementEnabled
+            : ExamConfig.ANNOUNCEMENT_ENABLED;
+        text.value = (typeof settings.announcementText === 'string')
+            ? settings.announcementText
+            : ExamConfig.ANNOUNCEMENT_TEXT;
+    }
+
+    function handleAnnouncementToggle() {
+        var toggle = $('settings-announcement-enabled');
+        if (!toggle || !bankData) return;
+        BankModel.ensureSettings(bankData).announcementEnabled = toggle.checked;
+        hasUnsavedChanges = true;
+        updateSyncWarningUI();
+        scheduleDraftSave();
+        showToast(toggle.checked ? '考试公告已开启，请同步以生效' : '考试公告已关闭，请同步以生效', 'success');
+    }
+
+    function handleAnnouncementTextChange() {
+        var input = $('settings-announcement-text');
+        if (!input || !bankData) return;
+        BankModel.ensureSettings(bankData).announcementText = input.value.trim();
+        hasUnsavedChanges = true;
+        updateSyncWarningUI();
+        scheduleDraftSave();
+        showToast('考试公告已更新，请同步以生效', 'success');
     }
 
     function handleSettingsChange() {
