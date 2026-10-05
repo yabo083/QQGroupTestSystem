@@ -12,6 +12,22 @@ const AdminApp = (() => {
 
     const $ = id => document.getElementById(id);
 
+    const ICON = {
+        pencil:'<svg class="icon" aria-hidden="true"><use href="#i-pencil-simple"/></svg>',
+        trash:'<svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>',
+        grip:'<svg class="icon" aria-hidden="true"><use href="#i-dots-six-vertical"/></svg>',
+        warning:'<svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>',
+        checkCircle:'<svg class="icon" aria-hidden="true"><use href="#i-check-circle"/></svg>',
+        xCircle:'<svg class="icon" aria-hidden="true"><use href="#i-x-circle"/></svg>',
+        desktop:'<svg class="icon" aria-hidden="true"><use href="#i-desktop"/></svg>',
+        cloud:'<svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg>',
+        listChecks:'<svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>',
+        download:'<svg class="icon" aria-hidden="true"><use href="#i-download-simple"/></svg>',
+        shuffle:'<svg class="icon" aria-hidden="true"><use href="#i-shuffle"/></svg>',
+        hammer:'<svg class="icon" aria-hidden="true"><use href="#i-hammer"/></svg>',
+        lightbulb:'<svg class="icon" aria-hidden="true"><use href="#i-lightbulb"/></svg>'
+    };
+
     async function init() {
         bindEvents();
 
@@ -227,12 +243,12 @@ const AdminApp = (() => {
         questions.forEach(function(q, index) {
             html += '<div class="question-item" draggable="true" data-id="' + q.id + '" data-index="' + index + '">' +
                 '<div class="question-item-header">' +
-                    '<span class="drag-handle" title="拖拽排序">☰</span>' +
+                    '<span class="drag-handle" title="拖拽排序">' + ICON.grip + '</span>' +
                     '<span class="question-index">#' + (index + 1) + '</span>' +
                     '<span class="question-category-tag">' + escapeHtml(q.category || '未分类') + '</span>' +
                     '<div class="question-actions">' +
-                        '<button class="btn-icon" data-action="edit" data-id="' + q.id + '" title="编辑">✏️</button>' +
-                        '<button class="btn-icon" data-action="delete" data-id="' + q.id + '" title="删除">🗑️</button>' +
+                        '<button class="btn-icon" data-action="edit" data-id="' + q.id + '" title="编辑" aria-label="编辑">' + ICON.pencil + '</button>' +
+                        '<button class="btn-icon" data-action="delete" data-id="' + q.id + '" title="删除" aria-label="删除">' + ICON.trash + '</button>' +
                     '</div>' +
                 '</div>' +
                 '<div class="question-stem-preview">' + escapeHtml(q.stem) + '</div>' +
@@ -332,7 +348,7 @@ const AdminApp = (() => {
     function deleteQuestion(id) {
         var remaining = bankData.questions.length - 1;
         if (remaining < 5) {
-            if (!confirm('⚠️ 删除后仅剩 ' + remaining + ' 道题！题目过少会影响考试质量。确定要删除吗？')) return;
+            if (!confirm('删除后仅剩 ' + remaining + ' 道题！题目过少会影响考试质量。确定要删除吗？')) return;
         } else {
             if (!confirm('确定要删除这道题目吗？')) return;
         }
@@ -356,10 +372,10 @@ const AdminApp = (() => {
         var resultDiv = $('verify-result');
 
         if (result.valid) {
-            var warningHtml = result.warning ? '<p style="color:#f59e0b">⚠️ ' + escapeHtml(result.warning) + '</p>' : '';
+            var warningHtml = result.warning ? '<p style="color:var(--warning)">' + ICON.warning + ' ' + escapeHtml(result.warning) + '</p>' : '';
             resultDiv.innerHTML =
                 '<div class="verify-success">' +
-                    '<div class="verify-icon">✅</div>' +
+                    '<div class="verify-icon">' + ICON.checkCircle + '</div>' +
                     '<div class="verify-info">' +
                         '<h3>凭证有效 — 全部答对 (' + result.correctCount + '/' + result.totalCount + ')</h3>' +
                         '<p><strong>玩家 ID:</strong> ' + escapeHtml(result.playerID) + '</p>' +
@@ -372,7 +388,7 @@ const AdminApp = (() => {
             var warningHtml2 = result.warning ? '<p>' + escapeHtml(result.warning) + '</p>' : '';
             resultDiv.innerHTML =
                 '<div class="verify-fail">' +
-                    '<div class="verify-icon">❌</div>' +
+                    '<div class="verify-icon">' + ICON.xCircle + '</div>' +
                     '<div class="verify-info">' +
                         '<h3>凭证无效</h3>' +
                         errorDetail + warningHtml2 +
@@ -536,7 +552,7 @@ const AdminApp = (() => {
             var verified = GitHubSync.isVerified();
             badge.textContent = verified ? '已验证' : '待验证';
             badge.className = 'sync-badge ' + (verified ? 'connected' : 'pending');
-            info.innerHTML = '<p>' + (verified ? '✅' : '⚠️') + ' Worker 地址: <code>' + escapeHtml(cfg.workerUrl) + '</code></p>' +
+            info.innerHTML = '<p>' + (verified ? ICON.checkCircle : ICON.warning) + ' Worker 地址: <code>' + escapeHtml(cfg.workerUrl) + '</code></p>' +
                 (cfg.repo ? '<p>仓库: <code>' + escapeHtml(cfg.repo) + '</code>' + (cfg.canPush ? '，有写入权限' : '，无写入权限') + '</p>' : '') +
                 '<p class="sync-help">保存配置会先测试连接，测试按钮会测试当前输入框内容。</p>';
             $('sync-worker-url').value = cfg.workerUrl;
@@ -592,10 +608,10 @@ const AdminApp = (() => {
             var msg = '连接成功！仓库: ' + result.repo;
             if (!result.canPush) {
                 showSyncResult('error', '连接成功，但没有写入权限', result.message || '请检查 GitHub PAT 权限');
-                showToast(msg + '（⚠️ 无写入权限，请检查 PAT）', 'error');
+                showToast(msg + '（无写入权限，请检查 PAT）', 'error');
             } else {
                 showSyncResult('success', '连接成功', '仓库：' + result.repo + '，有写入权限。点击保存配置后生效');
-                showToast(msg + '（有写入权限 ✓）', 'success');
+                showToast(msg + '（有写入权限）', 'success');
             }
         } catch (e) {
             showSyncResult('error', '连接失败', e.message);
@@ -822,19 +838,19 @@ const AdminApp = (() => {
 
     function showConflictModal(diff, remoteBankData, remoteSha) {
         var html = '<div class="conflict-modal-content">';
-        html += '<h2>\u26a0\ufe0f \u540c\u6b65\u51b2\u7a81</h2>';
+        html += '<h2>' + ICON.warning + ' \u540c\u6b65\u51b2\u7a81</h2>';
         html += '<p>\u53e6\u4e00\u4f4d\u7ba1\u7406\u5458\u5728\u4f60\u7f16\u8f91\u671f\u95f4\u66f4\u65b0\u4e86\u9898\u5e93\uff0c\u9700\u8981\u5904\u7406\u51b2\u7a81\u3002</p>';
 
         html += '<div class="conflict-summary">';
-        html += '<div class="conflict-side"><strong>\ud83d\udcbb \u672c\u5730\u7248\u672c</strong><span>' + bankData.questions.length + ' \u9898</span></div>';
+        html += '<div class="conflict-side"><strong>' + ICON.desktop + ' \u672c\u5730\u7248\u672c</strong><span>' + bankData.questions.length + ' \u9898</span></div>';
         html += '<div class="conflict-vs">VS</div>';
-        html += '<div class="conflict-side"><strong>\u2601\ufe0f \u4e91\u7aef\u7248\u672c</strong><span>' + remoteBankData.questions.length + ' \u9898</span></div>';
+        html += '<div class="conflict-side"><strong>' + ICON.cloud + ' \u4e91\u7aef\u7248\u672c</strong><span>' + remoteBankData.questions.length + ' \u9898</span></div>';
         html += '</div>';
 
         // 差异明细
         if (diff.localOnly.length > 0) {
             html += '<div class="diff-section diff-added">';
-            html += '<h3>\ud83d\udcdd \u4f60\u65b0\u589e\u7684\u9898\u76ee (' + diff.localOnly.length + ')</h3>';
+            html += '<h3>' + ICON.listChecks + ' \u4f60\u65b0\u589e\u7684\u9898\u76ee (' + diff.localOnly.length + ')</h3>';
             diff.localOnly.forEach(function(q) {
                 html += '<div class="diff-item">' + escapeHtml(q.stem.substring(0, 80)) + (q.stem.length > 80 ? '...' : '') + '</div>';
             });
@@ -842,7 +858,7 @@ const AdminApp = (() => {
         }
         if (diff.remoteOnly.length > 0) {
             html += '<div class="diff-section diff-remote">';
-            html += '<h3>\ud83d\udce5 \u5bf9\u65b9\u65b0\u589e\u7684\u9898\u76ee (' + diff.remoteOnly.length + ')</h3>';
+            html += '<h3>' + ICON.download + ' \u5bf9\u65b9\u65b0\u589e\u7684\u9898\u76ee (' + diff.remoteOnly.length + ')</h3>';
             diff.remoteOnly.forEach(function(q) {
                 html += '<div class="diff-item">' + escapeHtml(q.stem.substring(0, 80)) + (q.stem.length > 80 ? '...' : '') + '</div>';
             });
@@ -850,22 +866,22 @@ const AdminApp = (() => {
         }
         if (diff.modified.length > 0) {
             html += '<div class="diff-section diff-modified">';
-            html += '<h3>\u270f\ufe0f \u53cc\u65b9\u90fd\u4fee\u6539\u4e86 (' + diff.modified.length + ')</h3>';
+            html += '<h3>' + ICON.pencil + ' \u53cc\u65b9\u90fd\u4fee\u6539\u4e86 (' + diff.modified.length + ')</h3>';
             diff.modified.forEach(function(m) {
                 html += '<div class="diff-item"><span class="diff-label-local">\u672c\u5730:</span> ' + escapeHtml(m.local.stem.substring(0, 60)) + (m.local.stem.length > 60 ? '...' : '') + '</div>';
                 html += '<div class="diff-item"><span class="diff-label-remote">\u4e91\u7aef:</span> ' + escapeHtml(m.remote.stem.substring(0, 60)) + (m.remote.stem.length > 60 ? '...' : '') + '</div>';
             });
             html += '</div>';
         }
-        html += '<p class="diff-unchanged">\u2705 \u4e00\u81f4\u9898\u76ee: ' + diff.unchanged + ' \u9053</p>';
+        html += '<p class="diff-unchanged">' + ICON.checkCircle + ' \u4e00\u81f4\u9898\u76ee: ' + diff.unchanged + ' \u9053</p>';
 
         // 操作按钮
         html += '<div class="conflict-actions">';
-        html += '<button class="btn btn-primary" id="conflict-merge-btn" title="\u5408\u5e76\u4e24\u4e2a\u7248\u672c\uff1a\u4fdd\u7559\u6240\u6709\u9898\u76ee\uff0c\u51b2\u7a81\u9898\u76ee\u4f7f\u7528\u672c\u5730\u7248\u672c">\ud83d\udd00 \u667a\u80fd\u5408\u5e76</button>';
-        html += '<button class="btn btn-danger" id="conflict-force-btn">\ud83d\udd28 \u5f3a\u5236\u8986\u76d6\u4e91\u7aef</button>';
-        html += '<button class="btn btn-secondary" id="conflict-load-remote-btn">\ud83d\udce5 \u4f7f\u7528\u4e91\u7aef\u7248\u672c</button>';
+        html += '<button class="btn btn-primary" id="conflict-merge-btn" title="\u5408\u5e76\u4e24\u4e2a\u7248\u672c\uff1a\u4fdd\u7559\u6240\u6709\u9898\u76ee\uff0c\u51b2\u7a81\u9898\u76ee\u4f7f\u7528\u672c\u5730\u7248\u672c">' + ICON.shuffle + ' \u667a\u80fd\u5408\u5e76</button>';
+        html += '<button class="btn btn-danger" id="conflict-force-btn">' + ICON.hammer + ' \u5f3a\u5236\u8986\u76d6\u4e91\u7aef</button>';
+        html += '<button class="btn btn-secondary" id="conflict-load-remote-btn">' + ICON.download + ' \u4f7f\u7528\u4e91\u7aef\u7248\u672c</button>';
         html += '</div>';
-        html += '<p class="conflict-hint">\ud83d\udca1 \u672c\u5730\u4fee\u6539\u5df2\u81ea\u52a8\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u4e0d\u4f1a\u4e22\u5931</p>';
+        html += '<p class="conflict-hint">' + ICON.lightbulb + ' \u672c\u5730\u4fee\u6539\u5df2\u81ea\u52a8\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u4e0d\u4f1a\u4e22\u5931</p>';
         html += '</div>';
 
         var modal = document.createElement('div');

@@ -12,6 +12,12 @@ const ExamApp = (() => {
 
     const $ = id => document.getElementById(id);
 
+    const ICON = {
+        listChecks:'<svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>',
+        confetti:'<svg class="icon" aria-hidden="true"><use href="#i-confetti"/></svg>',
+        xCircle:'<svg class="icon" aria-hidden="true"><use href="#i-x-circle"/></svg>'
+    };
+
     function init() {
         $('start-btn').addEventListener('click', startExam);
         $('prev-btn').addEventListener('click', prevQuestion);
@@ -33,7 +39,7 @@ const ExamApp = (() => {
             if (count <= 0) count = data.questions.length;
             count = Math.min(count, data.questions.length);
             var el = $('info-question-count');
-            if (el) el.textContent = '📝 共 ' + count + ' 道选择题';
+            if (el) el.innerHTML = ICON.listChecks + ' 共 ' + count + ' 道选择题';
         } catch (e) {
             // 加载失败时保持默认显示
         }
@@ -213,11 +219,11 @@ const ExamApp = (() => {
 
             showScreen('result-screen');
             $('result-score').textContent = score;
-            $('result-score').style.color = passed ? '#4ade80' : '#f87171';
+            $('result-score').style.color = passed ? 'var(--success)' : 'var(--danger)';
             $('result-correct').textContent = correct + '/' + total;
 
             if (passed) {
-                $('result-status').textContent = '🎉 恭喜通过！';
+                $('result-status').innerHTML = ICON.confetti + '<span>恭喜通过！</span>';
                 $('result-status').className = 'result-status pass';
                 $('result-message').textContent = '你已通过入群考试，请将凭证码发送给群主完成验证。';
                 $('credential-section').style.display = 'block';
@@ -237,7 +243,7 @@ const ExamApp = (() => {
                 $('credential-time').textContent = _credential.timeStr;
                 $('credential-player').textContent = _credential.playerID;
             } else {
-                $('result-status').textContent = '❌ 未通过';
+                $('result-status').innerHTML = ICON.xCircle + '<span>未通过</span>';
                 $('result-status').className = 'result-status fail';
                 $('result-message').textContent = '很遗憾，你答对了 ' + correct + '/' + total + ' 题。必须满分才能通过，请重新阅读服务器公告后再试。';
                 $('credential-section').style.display = 'none';
@@ -314,27 +320,27 @@ const ExamApp = (() => {
 
         // Background
         const grad = ctx.createLinearGradient(0, 0, 900, 520);
-        grad.addColorStop(0, '#1a1a2e');
-        grad.addColorStop(1, '#16213e');
+        grad.addColorStop(0, '#0e1013');
+        grad.addColorStop(1, '#15181d');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, 900, 520);
 
         // Border
-        ctx.strokeStyle = '#d4a843';
+        ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 4;
         ctx.strokeRect(20, 20, 860, 480);
-        ctx.strokeStyle = 'rgba(212,168,67,0.3)';
+        ctx.strokeStyle = 'rgba(52,211,153,0.3)';
         ctx.lineWidth = 1;
         ctx.strokeRect(30, 30, 840, 460);
 
         // Title
-        ctx.fillStyle = '#d4a843';
+        ctx.fillStyle = '#34d399';
         ctx.font = 'bold 36px ' + fontStack;
         ctx.textAlign = 'center';
         ctx.fillText('入群考试通过凭证', 450, 90);
 
         // Divider
-        ctx.strokeStyle = '#d4a843';
+        ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(200, 110);
@@ -345,46 +351,46 @@ const ExamApp = (() => {
         var leftX = 120, y = 170, lh = 50;
 
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#a0a0a0';
+        ctx.fillStyle = '#8a92a1';
         ctx.font = '18px ' + fontStack;
         ctx.fillText('玩家 ID', leftX, y);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = '#e9ecf2';
         ctx.font = 'bold 24px ' + fontStack;
         ctx.fillText(cred.playerID, leftX + 130, y);
 
         y += lh;
-        ctx.fillStyle = '#a0a0a0';
+        ctx.fillStyle = '#8a92a1';
         ctx.font = '18px ' + fontStack;
         ctx.fillText('通过时间', leftX, y);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = '#e9ecf2';
         ctx.font = '22px ' + fontStack;
         ctx.fillText(cred.timeStr, leftX + 130, y);
 
         y += lh;
-        ctx.fillStyle = '#a0a0a0';
+        ctx.fillStyle = '#8a92a1';
         ctx.font = '18px ' + fontStack;
         ctx.fillText('考试成绩', leftX, y);
-        ctx.fillStyle = '#4ade80';
+        ctx.fillStyle = '#34d399';
         ctx.font = 'bold 24px ' + fontStack;
         ctx.fillText('100 分 — 满分通过', leftX + 130, y);
 
         y += lh + 20;
-        ctx.fillStyle = '#a0a0a0';
+        ctx.fillStyle = '#8a92a1';
         ctx.font = '16px ' + fontStack;
         ctx.fillText('验证凭证码:', leftX, y);
 
         y += 35;
-        ctx.fillStyle = '#0d1117';
+        ctx.fillStyle = '#0b0d10';
         ctx.fillRect(leftX - 10, y - 25, 680, 45);
-        ctx.strokeStyle = '#30363d';
+        ctx.strokeStyle = '#252a33';
         ctx.lineWidth = 1;
         ctx.strokeRect(leftX - 10, y - 25, 680, 45);
-        ctx.fillStyle = '#58a6ff';
+        ctx.fillStyle = '#34d399';
         ctx.font = '18px Consolas, "Courier New", monospace';
         ctx.fillText(cred.code, leftX + 10, y + 2);
 
         // Footer
-        ctx.fillStyle = '#555';
+        ctx.fillStyle = '#6e7787';
         ctx.font = '14px ' + fontStack;
         ctx.textAlign = 'center';
         ctx.fillText('请将此凭证发送给群主以完成入群验证 · 凭证码可由管理员在线验证真伪', 450, 480);
